@@ -13,12 +13,14 @@ use App\Ssh\RemoteShell;
 use Carbon\CarbonImmutable;
 use Flux\Flux;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Date;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Validation\Rules\Password;
 use Livewire\Component;
@@ -55,6 +57,7 @@ class AppServiceProvider extends ServiceProvider
         $this->configureDefaults();
         $this->configurePageRoutes();
         $this->configureRefusedActions();
+        $this->configureRateLimits();
 
         Gate::define('administer', fn (User $user): bool => (bool) $user->is_admin);
 
@@ -69,6 +72,14 @@ class AppServiceProvider extends ServiceProvider
      * Only actions and property changes are handled this way. A component refused while mounting still fails, so a page
      * someone may not see is never rendered for them.
      */
+    /**
+     * API requests are limited per API key's user, so one busy script cannot crowd out everyone else.
+     */
+    protected function configureRateLimits(): void
+    {
+        RateLimiter::for('api', fn (Request $request): Limit => Limit::perMinute(120)->by($request->user()?->id ?: $request->ip()));
+    }
+
     protected function configureRefusedActions(): void
     {
         /** @var WeakMap<Component, true> $calling */

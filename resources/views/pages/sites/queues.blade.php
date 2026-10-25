@@ -1,15 +1,14 @@
 <?php
 
+use App\Actions\Sites\CreateQueueWorker;
+use App\Actions\Sites\SetScheduler;
 use App\Enums\ResourceStatus;
 use App\Jobs\InstallDaemon;
-use App\Jobs\InstallScheduledJob;
 use App\Jobs\RemoveDaemon;
-use App\Jobs\RemoveScheduledJob;
 use App\Models\Daemon;
 use App\Models\ScheduledJob;
 use App\Models\Server;
 use App\Models\Site;
-use App\Sites\SiteCommands;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Computed;
@@ -57,33 +56,14 @@ new class extends Component {
     #[Computed]
     public function scheduler(): ?ScheduledJob
     {
-        return $this->site->scheduledJobs()->where('command', SiteCommands::scheduler($this->site))->first();
+        return SetScheduler::current($this->site);
     }
 
-    public function createWorker(): void
+    public function createWorker(CreateQueueWorker $createQueueWorker): void
     {
         $this->authorize('update', $this->site);
 
-        $validated = $this->validate([
-            'connection' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9_-]+$/D'],
-            'queue' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9_,:.-]+$/D'],
-            'processes' => ['required', 'integer', 'between:1,64'],
-            'timeout' => ['required', 'integer', 'between:0,86400'],
-            'sleep' => ['required', 'integer', 'between:0,3600'],
-            'tries' => ['required', 'integer', 'between:0,100'],
-        ]);
-
-        $daemon = $this->server->daemons()->create([
-            'site_id' => $this->site->id,
-            'command' => SiteCommands::queueWorker($this->site, $validated),
-            'directory' => $this->site->currentPath(),
-            'user' => $this->site->systemUser(),
-            'processes' => $validated['processes'],
-            'stop_wait_seconds' => $validated['timeout'] + 10,
-            'status' => ResourceStatus::Pending,
-        ]);
-
-        InstallDaemon::dispatch($daemon);
+        $createQueueWorker->handle($this->site, $this->only(['connection', 'queue', 'processes', 'timeout', 'sleep', 'tries']));
 
         Flux::modal('create-worker')->close();
         Flux::toast(variant: 'success', text: __('Starting queue worker.'));
@@ -106,24 +86,11 @@ new class extends Component {
         RemoveDaemon::dispatch($daemon);
     }
 
-    public function toggleScheduler(): void
+    public function toggleScheduler(SetScheduler $setScheduler): void
     {
         $this->authorize('update', $this->site);
 
-        if ($scheduler = $this->scheduler) {
-            $scheduler->update(['status' => ResourceStatus::Removing]);
-            RemoveScheduledJob::dispatch($scheduler);
-
-            return;
-        }
-
-        InstallScheduledJob::dispatch($this->server->scheduledJobs()->create([
-            'site_id' => $this->site->id,
-            'command' => SiteCommands::scheduler($this->site),
-            'user' => $this->site->systemUser(),
-            'frequency' => '* * * * *',
-            'status' => ResourceStatus::Pending,
-        ]));
+        $setScheduler->handle($this->site, $this->scheduler === null);
 
         unset($this->scheduler);
     }

@@ -1,10 +1,10 @@
 <?php
 
+use App\Actions\Sites\InstallSiteRepository;
 use App\Actions\Sites\QueueDeployment;
 use App\Actions\Sites\SetQuickDeploy;
 use App\Deployments\DeployScript;
 use App\Enums\ResourceStatus;
-use App\Jobs\InstallRepository;
 use App\Models\Deployment;
 use App\Models\Server;
 use App\Models\Site;
@@ -170,44 +170,15 @@ new class extends Component {
         }
     }
 
-    public function installRepository(): void
+    public function installRepository(InstallSiteRepository $installSiteRepository): void
     {
         $this->authorize('update', $this->site);
 
-        $custom = $this->source === SourceControlProviders::CUSTOM;
-
-        if (! $custom) {
+        if ($this->source !== SourceControlProviders::CUSTOM) {
             $this->authorize('useSourceControl', $this->site);
         }
 
-        $validated = $this->validate([
-            'source' => ['required', 'string', function (string $attribute, string $value, Closure $fail) use ($custom): void {
-                if (! $custom && ! isset($this->connectedProviders[$value])) {
-                    $fail(__('Connect an account on this provider before installing a repository from it.'));
-                }
-            }],
-            // A clone URL is quoted into shell commands, so it may only hold the characters SSH URLs use.
-            'repository' => $custom
-                ? ['required', 'string', 'max:255', 'regex:/^(ssh:\/\/)?[A-Za-z0-9._-]+@[A-Za-z0-9.-]+(:[0-9]+)?[:\/][A-Za-z0-9._~\/-]+$/D']
-                : ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/D'],
-            'branch' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._\/-]+$/D', 'not_regex:/\.\./'],
-        ], [
-            'repository.regex' => $custom ? __('Enter an SSH clone URL, such as git@git.example.com:team/app.git.') : __('Choose a repository.'),
-        ]);
-
-        // A different repository, or one from a different source, gets a new deploy key.
-        if ($this->site->hasRepository() && ($this->site->source_control !== $validated['source'] || $this->site->repository !== $validated['repository'])) {
-            $this->site->update(['deploy_key_private' => null, 'deploy_key_public' => null]);
-        }
-
-        $this->site->update([
-            'source_control' => $validated['source'],
-            'repository' => $validated['repository'],
-            'branch' => $validated['branch'],
-            'status' => ResourceStatus::Pending,
-        ]);
-
-        InstallRepository::dispatch($this->site);
+        $installSiteRepository->handle($this->site, Auth::user(), $this->only(['source', 'repository', 'branch']));
 
         Flux::toast(variant: 'success', text: __('Installing repository.'));
     }

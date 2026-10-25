@@ -1,13 +1,13 @@
 <?php
 
+use App\Actions\Servers\AddDatabase;
+use App\Actions\Servers\SaveDatabaseUser;
 use App\Enums\DatabaseEngine;
 use App\Enums\ResourceStatus;
-use App\Jobs\CreateDatabase;
 use App\Jobs\DeleteDatabase;
 use App\Jobs\DeleteDatabaseUser;
 use App\Jobs\RestoreDatabase;
 use App\Jobs\SyncDatabaseAccess;
-use App\Jobs\SyncDatabaseUser;
 use App\Models\Database;
 use App\Models\DatabaseUser;
 use App\Models\Server;
@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as SupportCollection;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
@@ -57,15 +58,6 @@ new class extends Component {
         $this->engine = $this->server->defaultDatabaseEngine()->value;
     }
 
-    /**
-     * Validation rules that keep an engine to the ones the server runs.
-     *
-     * @return list<mixed>
-     */
-    protected function engineRules(): array
-    {
-        return ['required', Rule::in(array_column($this->server->databaseEngines(), 'value'))];
-    }
 
     public function render(): mixed
     {
@@ -90,19 +82,11 @@ new class extends Component {
         return $this->server->databaseUsers()->with('databases')->orderBy('username')->get();
     }
 
-    public function createDatabase(): void
+    public function createDatabase(AddDatabase $addDatabase): void
     {
         $this->authorize('update', $this->server);
 
-        $validated = $this->validate([
-            'engine' => $this->engineRules(),
-            'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/D', Database::notSystemDatabaseRule(),
-                Rule::unique('databases')->where('server_id', $this->server->id)->where('engine', $this->engine)],
-        ], [
-            'name.not_regex' => __('This name is reserved by the database server. Choose another.'),
-        ]);
-
-        CreateDatabase::dispatch($this->server->databases()->create([...$validated, 'status' => ResourceStatus::Pending]));
+        $addDatabase->handle($this->server, $this->only(['engine', 'name']));
 
         $this->reset('name');
         Flux::toast(variant: 'success', text: __('Creating database.'));
@@ -277,43 +261,25 @@ new class extends Component {
         Flux::modal('database-user')->show();
     }
 
-    public function saveUser(): void
+    public function saveUser(SaveDatabaseUser $saveDatabaseUser): void
     {
         $this->authorize('update', $this->server);
 
-        $user = $this->editingUserId
-            ? $this->server->databaseUsers()->findOrFail($this->editingUserId)
-            : $this->server->databaseUsers()->make();
+        $user = $this->editingUserId ? $this->server->databaseUsers()->findOrFail($this->editingUserId) : null;
 
-        // Accounts are synced by name and engine, so changing either would leave the old account behind with its access.
-        if ($user->exists) {
-            $this->username = $user->username;
-            $this->userEngine = $user->engine->value;
+        try {
+            $saveDatabaseUser->handle($this->server, $user, [
+                'engine' => $this->userEngine,
+                'username' => $this->username,
+                'password' => $this->password,
+                'databases' => $this->userDatabases,
+            ]);
+        } catch (ValidationException $exception) {
+            // The form names the engine and databases fields after the user, beside the new database form's.
+            throw ValidationException::withMessages(collect($exception->errors())
+                ->mapWithKeys(fn (array $messages, string $field): array => [preg_replace(['/^engine$/', '/^databases/'], ['userEngine', 'userDatabases'], $field) => $messages])
+                ->all());
         }
-
-        $validated = $this->validate([
-            'userEngine' => $this->engineRules(),
-            'username' => ['required', 'string', 'max:32', 'regex:/^[A-Za-z0-9_]+$/D', 'not_regex:/^pg_/i', Rule::notIn(['root', 'postgres', config('swage.user')]),
-                Rule::unique('database_users')->where('server_id', $this->server->id)->where('engine', $this->userEngine)->ignore($this->editingUserId)],
-            'password' => [$this->editingUserId ? 'nullable' : 'required', 'string', 'min:12', 'max:100', 'regex:/^[A-Za-z0-9!#%*+,.\/:=?@^_{}~-]+$/D'],
-            'userDatabases' => ['array'],
-            // A user can only be given databases on its own engine.
-            'userDatabases.*' => [Rule::exists('databases', 'id')->where('server_id', $this->server->id)->where('engine', $this->userEngine)],
-        ], [
-            'username.not_regex' => __('Names starting with pg_ are reserved by PostgreSQL.'),
-            'password.regex' => __('The password may not contain quotes, spaces, backslashes, dollar signs or backticks.'),
-        ]);
-
-        $user->fill([
-            'engine' => $validated['userEngine'],
-            'username' => $validated['username'],
-            'status' => ResourceStatus::Pending,
-            ...(filled($validated['password']) ? ['password' => $validated['password']] : []),
-        ])->save();
-
-        $user->databases()->sync($validated['userDatabases']);
-
-        SyncDatabaseUser::dispatch($user);
 
         Flux::modal('database-user')->close();
         Flux::toast(variant: 'success', text: __('Saving database user.'));

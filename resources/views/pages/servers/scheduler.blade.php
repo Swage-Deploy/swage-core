@@ -1,7 +1,7 @@
 <?php
 
+use App\Actions\Servers\CreateScheduledJob;
 use App\Enums\ResourceStatus;
-use App\Jobs\InstallScheduledJob;
 use App\Jobs\RemoveScheduledJob;
 use App\Models\ScheduledJob;
 use App\Models\Server;
@@ -58,29 +58,24 @@ new class extends Component {
         return $this->server->scheduledJobs()->with('site')->latest()->get();
     }
 
-    public function create(): void
+    public function create(CreateScheduledJob $createScheduledJob): void
     {
         $this->authorize('update', $this->server);
 
-        $validated = $this->validate([
-            'command' => ['required', 'string', 'max:1000', 'not_regex:/[\r\n%]/'],
-            'user' => ['required', Rule::in($this->server->systemUsers())],
+        $this->validate([
             'frequency' => ['required', Rule::in(array_keys(self::FREQUENCIES))],
             'custom_frequency' => ['required_if:frequency,custom', 'nullable', 'string', 'max:100',
                 fn (string $attribute, mixed $value, Closure $fail) => $this->frequency === 'custom' && ! CronExpression::isValidExpression((string) $value)
                     ? $fail(__('Enter a valid cron expression.'))
                     : null,
             ],
-        ], [
-            'command.not_regex' => __('The command may not contain line breaks or % characters.'),
         ]);
 
-        InstallScheduledJob::dispatch($this->server->scheduledJobs()->create([
-            'command' => $validated['command'],
-            'user' => $validated['user'],
-            'frequency' => $validated['frequency'] === 'custom' ? trim($validated['custom_frequency']) : $validated['frequency'],
-            'status' => ResourceStatus::Pending,
-        ]));
+        $createScheduledJob->handle($this->server, [
+            'command' => $this->command,
+            'user' => $this->user,
+            'frequency' => $this->frequency === 'custom' ? $this->custom_frequency : $this->frequency,
+        ]);
 
         $this->reset('command', 'custom_frequency');
         Flux::toast(variant: 'success', text: __('Scheduling job.'));

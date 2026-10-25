@@ -11,6 +11,7 @@ Route::middleware(['auth'])->group(function () {
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('settings/appearance', 'pages::settings.appearance')->name('appearance.edit');
     Route::livewire('settings/source-control', 'pages::settings.source-control')->name('source-control.edit');
+    Route::livewire('settings/api-keys', 'pages::settings.api-keys')->name('api-keys.edit');
     Route::redirect('settings/github', 'settings/source-control');
 
     Route::livewire('settings/security', 'pages::settings.security')

@@ -7,6 +7,7 @@
         <flux:navbar.item icon="swatch" :href="route('appearance.edit')" :current="request()->pageRouteIs('appearance.edit')" wire:navigate>{{ __('Appearance') }}</flux:navbar.item>
         @unlessimpersonating
             <flux:navbar.item icon="folder-git-2" :href="route('source-control.edit')" :current="request()->pageRouteIs('source-control.edit')" wire:navigate>{{ __('Source control') }}</flux:navbar.item>
+            <flux:navbar.item icon="key" :href="route('api-keys.edit')" :current="request()->pageRouteIs('api-keys.edit')" wire:navigate>{{ __('API keys') }}</flux:navbar.item>
         @endimpersonating
     </flux:navbar>
 

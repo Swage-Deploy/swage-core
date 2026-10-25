@@ -1,9 +1,9 @@
 <?php
 
+use App\Actions\Sites\ReadSiteEnvironment;
+use App\Actions\Sites\WriteSiteEnvironment;
 use App\Models\Server;
 use App\Models\Site;
-use App\Ssh\RemoteShell;
-use App\Ssh\Script;
 use Flux\Flux;
 use Illuminate\Support\Str;
 use Livewire\Component;
@@ -28,27 +28,17 @@ new class extends Component {
      * Read the site's shared .env file from the server. It holds the site's secrets, so it is only read, and sent to
      * the browser, once asked for.
      */
-    public function reveal(RemoteShell $shell): void
+    public function reveal(ReadSiteEnvironment $readSiteEnvironment): void
     {
         $this->authorize('update', $this->site);
 
         $this->loadError = null;
 
         try {
-            $result = $shell->run($this->server, 'cat '.escapeshellarg($this->site->path().'/shared/.env'), timeout: 20);
+            $this->environment = $readSiteEnvironment->handle($this->site);
         } catch (Throwable $exception) {
             $this->loadError = $exception->getMessage();
-
-            return;
         }
-
-        if ($result->failed()) {
-            $this->loadError = trim($result->output);
-
-            return;
-        }
-
-        $this->environment = $result->output;
     }
 
     /**
@@ -63,26 +53,16 @@ new class extends Component {
     /**
      * Write the .env file back to the server, optionally clear the config cache, and reload PHP.
      */
-    public function save(RemoteShell $shell): void
+    public function save(WriteSiteEnvironment $writeSiteEnvironment): void
     {
         $this->authorize('update', $this->site);
 
-        $this->validate([
-            'environment' => ['present', 'nullable', 'string', 'max:65535'],
-            'clearConfig' => ['boolean'],
-        ]);
+        $this->validate(['clearConfig' => ['boolean']]);
 
-        $environment = rtrim(str_replace("\r\n", "\n", $this->environment ?? ''));
-
-        $result = $shell->run($this->server, Script::render('sites.write-environment', [
-            'site' => $this->site,
-            'environment' => $environment,
-            'delimiter' => 'SWAGE_ENV_'.Str::upper(Str::random(16)),
-            'clearConfig' => $this->clearConfig,
-        ]), timeout: 30);
-
-        if ($result->failed()) {
-            Flux::toast(variant: 'danger', text: __('Unable to save the environment: :output', ['output' => Str::limit(trim($result->output), 200)]));
+        try {
+            $writeSiteEnvironment->handle($this->site, $this->environment, $this->clearConfig);
+        } catch (RuntimeException $exception) {
+            Flux::toast(variant: 'danger', text: __('Unable to save the environment: :output', ['output' => Str::limit($exception->getMessage(), 200)]));
 
             return;
         }

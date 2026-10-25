@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Servers\CreateDaemon;
 use App\Enums\ResourceStatus;
 use App\Jobs\InstallDaemon;
 use App\Jobs\RemoveDaemon;
@@ -7,7 +8,6 @@ use App\Models\Daemon;
 use App\Models\Server;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -45,19 +45,11 @@ new class extends Component {
         return $this->server->daemons()->with('site')->latest()->get();
     }
 
-    public function create(): void
+    public function create(CreateDaemon $createDaemon): void
     {
         $this->authorize('update', $this->server);
 
-        $validated = $this->validate([
-            'command' => ['required', 'string', 'max:1000', 'not_regex:/[\r\n]/'],
-            'directory' => ['nullable', 'string', 'max:255', 'regex:/^\/[A-Za-z0-9._\/-]*$/D'],
-            'user' => ['required', Rule::in($this->server->systemUsers())],
-            'processes' => ['required', 'integer', 'between:1,64'],
-            'stop_wait_seconds' => ['required', 'integer', 'between:1,3600'],
-        ]);
-
-        InstallDaemon::dispatch($this->server->daemons()->create([...$validated, 'status' => ResourceStatus::Pending]));
+        $createDaemon->handle($this->server, $this->only(['command', 'directory', 'user', 'processes', 'stop_wait_seconds']));
 
         $this->reset('command', 'directory', 'processes', 'stop_wait_seconds');
         Flux::modal('create-daemon')->close();

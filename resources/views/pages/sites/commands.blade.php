@@ -1,11 +1,10 @@
 <?php
 
+use App\Actions\Sites\RunArtisanCommand;
 use App\Enums\DeploymentStatus;
-use App\Jobs\RunSiteCommand;
 use App\Models\Server;
 use App\Models\Site;
 use App\Models\SiteCommand;
-use App\Sites\ArtisanCommand;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
@@ -62,27 +61,11 @@ new class extends Component {
     /**
      * Run the command in the site's live release, in the background like a deployment.
      */
-    public function run(): void
+    public function run(RunArtisanCommand $runArtisanCommand): void
     {
         $this->authorize('update', $this->site);
 
-        $this->validate(['command' => ['required', 'string', 'max:1000']]);
-
-        try {
-            $artisan = ArtisanCommand::parse($this->command);
-        } catch (InvalidArgumentException $exception) {
-            $this->addError('command', $exception->getMessage());
-
-            return;
-        }
-
-        $command = $this->site->commands()->create([
-            'user_id' => Auth::id(),
-            'command' => implode(' ', array_map(fn (string $argument): string => preg_match('/^[A-Za-z0-9:_.,=\/@%+-]+$/D', $argument) ? $argument : escapeshellarg($argument), $artisan->arguments)),
-            'status' => DeploymentStatus::Pending,
-        ]);
-
-        RunSiteCommand::dispatch($command);
+        $command = $runArtisanCommand->handle($this->site, Auth::user(), $this->command);
 
         $this->command = '';
         unset($this->commands);

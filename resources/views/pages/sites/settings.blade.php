@@ -1,13 +1,11 @@
 <?php
 
+use App\Actions\Sites\DeleteSite;
 use App\Actions\Sites\EnablePrivateRedis;
 use App\Actions\Sites\SetOctane;
+use App\Actions\Sites\UpdateSiteSettings;
 use App\Exceptions\ScriptFailedException;
 use App\Enums\ResourceStatus;
-use App\Jobs\InstallDaemon;
-use App\Jobs\InstallScheduledJob;
-use App\Jobs\RemoveSite;
-use App\Jobs\UpdateSiteConfiguration;
 use App\Models\Server;
 use App\Models\Site;
 use Flux\Flux;
@@ -45,62 +43,15 @@ new class extends Component {
         return $this->view()->title(__('Settings').' · '.$this->site->domain);
     }
 
-    public function save(): void
+    public function save(UpdateSiteSettings $updateSiteSettings): void
     {
         $this->authorize('update', $this->site);
 
-        $validated = $this->validate([
-            'aliases' => ['nullable', 'string', 'max:1000'],
-            'web_directory' => ['required', 'string', 'max:100', 'regex:/^\/[A-Za-z0-9._\/-]*$/D', 'not_regex:/\.\./'],
-            'php_version' => ['required', Rule::in($this->server->php_versions->map->value)],
-        ]);
-
-        $aliases = collect(preg_split('/[\s,]+/', strtolower($validated['aliases'] ?? ''), flags: PREG_SPLIT_NO_EMPTY))
-            ->reject(fn (string $alias): bool => $alias === $this->site->domain)
-            ->unique()
-            ->values();
-
-        foreach ($aliases as $alias) {
-            if (! preg_match('/^(\*\.)?(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/D', $alias)) {
-                $this->addError('aliases', __(':alias is not a valid domain name.', ['alias' => $alias]));
-
-                return;
-            }
-        }
-
-        $previousBinary = $this->site->php_version->binary();
-
-        $this->site->update([
-            'aliases' => $aliases->all(),
-            'web_directory' => $validated['web_directory'],
-            'php_version' => $validated['php_version'],
-            'status' => ResourceStatus::Installing,
-        ]);
-
-        UpdateSiteConfiguration::dispatch($this->site);
-
-        if ($previousBinary !== $this->site->php_version->binary()) {
-            $this->switchPhpBinary($previousBinary, $this->site->php_version->binary());
-        }
+        $updateSiteSettings->handle($this->site, $this->only(['aliases', 'web_directory', 'php_version']));
 
         Flux::toast(variant: 'success', text: __('Updating site configuration.'));
     }
 
-    /**
-     * Point the site's workers and scheduler at its new PHP version.
-     */
-    protected function switchPhpBinary(string $from, string $to): void
-    {
-        foreach ($this->site->daemons as $daemon) {
-            $daemon->update(['command' => preg_replace('/^'.preg_quote($from, '/').' /', "{$to} ", $daemon->command)]);
-            InstallDaemon::dispatch($daemon);
-        }
-
-        foreach ($this->site->scheduledJobs as $scheduledJob) {
-            $scheduledJob->update(['command' => preg_replace('/^'.preg_quote($from, '/').' /', "{$to} ", $scheduledJob->command)]);
-            InstallScheduledJob::dispatch($scheduledJob);
-        }
-    }
 
     /**
      * Switch the site between Octane and PHP-FPM.
@@ -147,7 +98,7 @@ new class extends Component {
         Flux::toast(variant: 'success', text: __('The site now uses its own Redis server.'));
     }
 
-    public function delete(): void
+    public function delete(DeleteSite $deleteSite): void
     {
         $this->authorize('delete', $this->site);
 
@@ -155,9 +106,7 @@ new class extends Component {
             'confirmation.in' => __('Type the domain to confirm.'),
         ]);
 
-        $this->site->update(['status' => ResourceStatus::Removing]);
-
-        RemoveSite::dispatch($this->site);
+        $deleteSite->handle($this->site);
 
         $this->redirectRoute('servers.sites', $this->server, navigate: true);
     }

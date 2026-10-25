@@ -3,13 +3,9 @@
 use App\Actions\Servers\CreateServer;
 use App\Enums\PhpVersion;
 use App\Enums\ServerType;
-use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Gate;
-use Illuminate\Validation\Rule;
 use Livewire\Attributes\Title;
 use Livewire\Component;
-use Symfony\Component\HttpFoundation\IpUtils;
 
 new #[Title('New server')] class extends Component {
     public string $name = '';
@@ -36,13 +32,7 @@ new #[Title('New server')] class extends Component {
      */
     public function databaseOptions(): array
     {
-        return [
-            'mysql' => 'MySQL 8',
-            'postgres' => 'PostgreSQL 16',
-            'postgres-pgvector' => 'PostgreSQL 16 + pgvector',
-            // A database server exists to run a database.
-            ...($this->type === ServerType::Database->value ? [] : ['none' => __('None')]),
-        ];
+        return CreateServer::databaseOptions($this->type);
     }
 
     /**
@@ -57,33 +47,6 @@ new #[Title('New server')] class extends Component {
 
     public bool $has_redis = true;
 
-    /**
-     * Ranges PHP considers public that still reach shared or translated networks: carrier-grade NAT (which Tailscale
-     * also uses), IETF protocol assignments, benchmarking, NAT64, 6to4 and Teredo. Each can lead back to the network
-     * Swage runs in.
-     *
-     * @var list<string>
-     */
-    protected const array NON_PUBLIC_RANGES = [
-        '100.64.0.0/10',
-        '192.0.0.0/24',
-        '198.18.0.0/15',
-        '64:ff9b::/96',
-        '64:ff9b:1::/48',
-        '2002::/16',
-        '2001::/32',
-    ];
-
-    /**
-     * Determine if an address is on the public internet, and not in a private, shared, reserved or tunnelled range
-     * that could reach the network Swage runs in.
-     */
-    protected function isPublicAddress(string $address): bool
-    {
-        return filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) !== false
-            && ! IpUtils::checkIp($address, self::NON_PUBLIC_RANGES);
-    }
-
     public function mount(): void
     {
         $this->default_php_version = PhpVersion::latest()->value;
@@ -95,41 +58,9 @@ new #[Title('New server')] class extends Component {
      */
     public function save(CreateServer $createServer): void
     {
-        $isAppServer = $this->type === ServerType::App->value;
-
-        $validated = $this->validate([
-            'type' => ['required', Rule::enum(ServerType::class)],
-            'name' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9][A-Za-z0-9._-]*$/D'],
-            // Only administrators may point Swage at its own host or the private network it runs in.
-            'ip_address' => ['required', 'ip', fn (string $attribute, mixed $value, Closure $fail) => Gate::denies('administer')
-                && ! $this->isPublicAddress((string) $value)
-                    ? $fail(__('Enter the server\'s public IP address.'))
-                    : null,
-            ],
-            'private_ip_address' => ['nullable', 'ip', 'different:ip_address'],
-            'ssh_port' => ['required', 'integer', 'between:1,65535'],
-            'php_versions' => $isAppServer ? ['required', 'array', 'min:1'] : ['exclude'],
-            'php_versions.*' => $isAppServer ? [Rule::enum(PhpVersion::class)] : ['exclude'],
-            'default_php_version' => $isAppServer ? ['required', Rule::in($this->php_versions)] : ['exclude'],
-            'database' => ['required', Rule::in(array_keys($this->databaseOptions()))],
-            'has_redis' => $isAppServer ? ['boolean'] : ['exclude'],
-        ], [
-            'name.regex' => __('The name may only contain letters, numbers, dots, dashes and underscores.'),
-            'default_php_version.in' => __('The default PHP version must be one of the installed versions.'),
-        ]);
-
-        $database = Arr::pull($validated, 'database');
-
-        $server = $createServer->handle(Auth::user(), [
-            'php_versions' => [],
-            'default_php_version' => null,
-            'has_redis' => false,
-            ...$validated,
-            'private_ip_address' => $validated['private_ip_address'] ?: null,
-            'has_mysql' => $database === 'mysql',
-            'has_postgres' => str_starts_with($database, 'postgres'),
-            'has_pgvector' => $database === 'postgres-pgvector',
-        ]);
+        $server = $createServer->fromInput(Auth::user(), $this->only([
+            'type', 'name', 'ip_address', 'private_ip_address', 'ssh_port', 'php_versions', 'default_php_version', 'database', 'has_redis',
+        ]));
 
         $this->redirectRoute('servers.show', $server, navigate: true);
     }

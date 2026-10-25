@@ -1,14 +1,11 @@
 <?php
 
 use App\Actions\Sites\CreateSite;
-use App\Enums\DatabaseEngine;
-use App\Models\Database;
 use App\Models\Server;
 use App\Models\Site;
 use App\Sites\SiteSystemUser;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Validation\Rule;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Component;
@@ -91,69 +88,14 @@ new class extends Component {
     {
         $this->authorize('update', $this->server);
 
-        $this->domain = strtolower(trim($this->domain));
-
-        $validated = $this->validate([
-            'domain' => ['required', 'string', 'max:253', 'regex:/^(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/D', Rule::unique('sites')->where('server_id', $this->server->id)],
-            'aliases' => ['nullable', 'string', 'max:1000'],
-            'web_directory' => ['required', 'string', 'max:100', 'regex:/^\/[A-Za-z0-9._\/-]*$/D', 'not_regex:/\.\./'],
-            'php_version' => ['required', Rule::in($this->server->php_versions->map->value)],
-            'isolated' => ['boolean'],
-            'system_user' => ['exclude_unless:isolated,true', 'required', ...SiteSystemUser::rules($this->server)],
-            'create_database' => ['boolean'],
-            // Without isolation the database name doubles as its user's name, which MySQL caps at 32 characters.
-            'database' => ['exclude_unless:create_database,true', 'required', 'string', 'max:'.($this->isolated ? 64 : 32), 'regex:/^[A-Za-z0-9_]+$/D', Database::notSystemDatabaseRule(),
-                Rule::unique('databases', 'name')->where('server_id', $this->server->id)->where('engine', $this->database_engine)],
-            'database_engine' => ['exclude_unless:create_database,true', 'required', Rule::in(array_column($this->server->databaseEngines(), 'value'))],
-            'zero_downtime' => ['boolean'],
-            'scheduler' => ['boolean'],
-        ], [
-            'domain.regex' => __('Enter a valid domain name, such as example.com.'),
-            'system_user.regex' => __('Use lowercase letters, numbers and underscores, starting with a letter.'),
-            'system_user.not_in' => __('This name belongs to a system account. Choose another.'),
-            'system_user.unique' => __('Another site on this server already runs as this user.'),
-            'database.unique' => __('A database with this name already exists on the server. Choose another.'),
-            'database.not_regex' => __('This name is reserved by the database server. Choose another.'),
-        ]);
-
-        $validated['system_user'] = $this->isolated ? $validated['system_user'] : null;
-        $validated['database'] = $this->create_database && $this->server->hasDatabase() ? $validated['database'] : null;
-        $validated['database_engine'] = $validated['database'] !== null ? DatabaseEngine::from($validated['database_engine']) : null;
-
-        if ($validated['database'] !== null && ! $this->databaseUsernameIsAvailable($validated['system_user'] ?? $validated['database'], $validated['database_engine'])) {
-            $this->addError($this->isolated ? 'system_user' : 'database', __('A database user with this name already exists on the server.'));
-
-            return;
-        }
-
-        $aliases = collect(preg_split('/[\s,]+/', strtolower($validated['aliases'] ?? ''), flags: PREG_SPLIT_NO_EMPTY))
-            ->reject(fn (string $alias): bool => $alias === $validated['domain'])
-            ->unique()
-            ->values();
-
-        foreach ($aliases as $alias) {
-            if (! preg_match('/^(\*\.)?(?!-)[a-z0-9-]+(\.[a-z0-9-]+)+$/D', $alias)) {
-                $this->addError('aliases', __(':alias is not a valid domain name.', ['alias' => $alias]));
-
-                return;
-            }
-        }
-
-        $createSite->handle($this->server, [...$validated, 'aliases' => $aliases->all()]);
+        $createSite->fromInput($this->server, $this->only([
+            'domain', 'aliases', 'web_directory', 'php_version', 'isolated', 'system_user', 'create_database', 'database', 'database_engine', 'zero_downtime', 'scheduler',
+        ]));
 
         $this->reset('domain', 'aliases', 'isolated', 'system_user', 'create_database', 'database', 'zero_downtime', 'scheduler', 'suggested_name');
         $this->database_engine = $this->server->defaultDatabaseEngine()->value ?? '';
         Flux::modal('create-site')->close();
         Flux::toast(variant: 'success', text: __('Installing site.'));
-    }
-
-    /**
-     * Determine if the site's database user can be created under a name on an engine.
-     */
-    protected function databaseUsernameIsAvailable(string $username, DatabaseEngine $engine): bool
-    {
-        return ! in_array($username, ['root', 'postgres', config('swage.user')], true)
-            && ! $this->server->databaseUsers()->where('engine', $engine)->where('username', $username)->exists();
     }
 }; ?>
 

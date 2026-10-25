@@ -1,8 +1,8 @@
 <?php
 
+use App\Actions\Sites\ObtainSiteCertificate;
+use App\Actions\Sites\RemoveSiteCertificate;
 use App\Enums\ResourceStatus;
-use App\Jobs\ObtainCertificate;
-use App\Jobs\RemoveCertificate;
 use App\Models\Server;
 use App\Models\Site;
 use Flux\Flux;
@@ -36,49 +36,23 @@ new class extends Component {
      */
     public function eligibleDomains(): array
     {
-        return array_values(array_filter($this->site->domains(), fn (string $domain): bool => ! str_starts_with($domain, '*.')));
+        return ObtainSiteCertificate::eligibleDomains($this->site);
     }
 
-    public function obtain(): void
+    public function obtain(ObtainSiteCertificate $obtainSiteCertificate): void
     {
         $this->authorize('update', $this->site);
 
-        $validated = $this->validate([
-            'domains' => ['required', 'array', 'min:1'],
-            'domains.*' => [Rule::in($this->eligibleDomains())],
-        ]);
+        $obtainSiteCertificate->handle($this->site, $this->domains);
 
-        $this->site->certificate?->delete();
-
-        $certificate = $this->site->certificate()->create([
-            'domains' => array_values(array_unique([$this->site->domain, ...$validated['domains']])),
-            'status' => ResourceStatus::Pending,
-        ]);
-
-        ObtainCertificate::dispatch($certificate);
-
-        $this->site->unsetRelation('certificate');
         Flux::toast(variant: 'success', text: __('Requesting certificate from Let\'s Encrypt.'));
     }
 
-    public function remove(): void
+    public function remove(RemoveSiteCertificate $removeSiteCertificate): void
     {
         $this->authorize('update', $this->site);
 
-        $certificate = $this->site->certificate;
-
-        if (! $certificate) {
-            return;
-        }
-
-        if ($certificate->status === ResourceStatus::Failed) {
-            $certificate->delete();
-        } else {
-            $certificate->update(['status' => ResourceStatus::Removing]);
-            RemoveCertificate::dispatch($certificate);
-        }
-
-        $this->site->unsetRelation('certificate');
+        $removeSiteCertificate->handle($this->site);
     }
 }; ?>
 

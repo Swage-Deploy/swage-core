@@ -14,8 +14,8 @@ class RestrictImpersonation
     use MatchesPageRoutes;
 
     /**
-     * Pages that change how a user signs in or which accounts they connect, which an administrator impersonating them
-     * may not use.
+     * Pages that change how a user signs in, which accounts they connect or which API keys act as them, which an
+     * administrator impersonating them may not use.
      *
      * @var list<string>
      */
@@ -30,6 +30,7 @@ class RestrictImpersonation
         'source-control.edit',
         'source-control.redirect',
         'source-control.callback',
+        'api-keys.edit',
     ];
 
     /**
