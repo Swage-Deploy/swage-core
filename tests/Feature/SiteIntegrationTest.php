@@ -8,6 +8,8 @@ use App\Models\User;
 use App\Sites\HooksIntoDeployments;
 use App\Sites\SiteIntegration;
 use App\Sites\SiteIntegrations;
+use Livewire\Component;
+use Livewire\Livewire;
 use Tests\Fakes\FakeSiteIntegration;
 
 function fakeSiteIntegration(array $secrets = []): FakeSiteIntegration
@@ -27,6 +29,49 @@ test('a site\'s plugins tab shows the panel of every integration', function () {
     $this->actingAs($site->server->user)
         ->get(route('servers.sites.settings', [$site->server, $site]))
         ->assertOk()
+        ->assertDontSee('Fake integration for example.com');
+});
+
+test('a site\'s plugins tab gives each integration a tab, showing one at a time', function () {
+    fakeSiteIntegration();
+    app(SiteIntegrations::class)->register(new class extends FakeSiteIntegration
+    {
+        public function __construct()
+        {
+            Livewire::component('second-site-integration.settings', new class extends Component
+            {
+                public Site $site;
+
+                public function render(): string
+                {
+                    return '<div>Second integration for {{ $site->domain }}</div>';
+                }
+            });
+        }
+
+        public function id(): string
+        {
+            return 'second-integration';
+        }
+
+        public function settingsComponent(): string
+        {
+            return 'second-site-integration.settings';
+        }
+    });
+    $site = Site::factory()->create(['domain' => 'example.com']);
+
+    $this->actingAs($site->server->user)
+        ->get(route('servers.sites.plugins', [$site->server, $site]))
+        ->assertOk()
+        ->assertSeeInOrder(['Fake Integration', 'Second Integration'])
+        ->assertSee('Fake integration for example.com')
+        ->assertDontSee('Second integration for example.com');
+
+    $this->actingAs($site->server->user)
+        ->get(route('servers.sites.plugins', ['server' => $site->server, 'site' => $site, 'plugin' => 'second-integration']))
+        ->assertOk()
+        ->assertSee('Second integration for example.com')
         ->assertDontSee('Fake integration for example.com');
 });
 
