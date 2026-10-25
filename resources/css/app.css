@@ -1,0 +1,108 @@
+@import 'tailwindcss';
+@import '../../vendor/livewire/flux/dist/flux.css';
+
+@source '../views';
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../vendor/livewire/flux-pro/stubs/**/*.blade.php';
+@source '../../vendor/livewire/flux/stubs/**/*.blade.php';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    /* Flux draws every surface from zinc, so warming it re-tints the whole UI: soot and ash rather than steel. */
+    --color-zinc-50: #fafaf9;
+    --color-zinc-100: #f5f4f2;
+    --color-zinc-200: #e8e5e1;
+    --color-zinc-300: #d6d1cb;
+    --color-zinc-400: #a8a099;
+    --color-zinc-500: #7a716a;
+    --color-zinc-600: #5a524c;
+    --color-zinc-700: #3d3632;
+    --color-zinc-800: #26211e;
+    --color-zinc-900: #1a1614;
+    --color-zinc-950: #0f0c0b;
+
+    --color-ember-300: #fdba74;
+    --color-ember-400: #fb923c;
+    --color-ember-500: #f97316;
+    --color-ember-600: #ea580c;
+    --color-ember-700: #c2410c;
+
+    --color-accent: var(--color-ember-600);
+    --color-accent-content: var(--color-ember-600);
+    --color-accent-foreground: var(--color-white);
+
+    --animate-ember: ember 2s ease-in-out infinite;
+
+    @keyframes ember {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.35; }
+    }
+
+    @keyframes ember-slide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(300%); }
+    }
+}
+
+@layer theme {
+    .dark {
+        --color-accent: var(--color-ember-500);
+        --color-accent-content: var(--color-ember-400);
+        --color-accent-foreground: var(--color-zinc-950);
+    }
+}
+
+@layer base {
+
+    *,
+    ::after,
+    ::before,
+    ::backdrop,
+    ::file-selector-button {
+        border-color: var(--color-gray-200, currentColor);
+    }
+
+    ::selection {
+        background-color: color-mix(in oklab, var(--color-ember-500) 35%, transparent);
+    }
+}
+
+[data-flux-field]:not(ui-radio, ui-checkbox) {
+    @apply grid gap-2;
+}
+
+[data-flux-label] {
+    @apply  !mb-0 !leading-tight;
+}
+
+input:focus[data-flux-control],
+textarea:focus[data-flux-control],
+select:focus[data-flux-control] {
+    @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
+}
+
+/* A faint ember glow at the top of every page. */
+.provision-glow {
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in oklab, var(--color-ember-500) 9%, transparent), transparent 70%);
+}
+
+.dark .provision-glow {
+    background-image: radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in oklab, var(--color-ember-500) 14%, transparent), transparent 70%);
+}
+
+/* Fine grid used behind headers and empty states. */
+.provision-grid {
+    background-image:
+        linear-gradient(to right, color-mix(in oklab, currentColor 7%, transparent) 1px, transparent 1px),
+        linear-gradient(to bottom, color-mix(in oklab, currentColor 7%, transparent) 1px, transparent 1px);
+    background-size: 24px 24px;
+    mask-image: radial-gradient(ellipse at top, black 20%, transparent 75%);
+}
+
+[x-cloak] {
+    display: none !important;
+}

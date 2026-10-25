@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+#
+# Applies Swage host migrations as root. Installed to /usr/local/sbin and the
+# only command the swage user may run as root besides reloading PHP-FPM:
+#
+#   sudo /usr/local/sbin/swage-host-migrate <commit>
+#
+# The swage user cannot supply the migrations themselves. This script fetches
+# the given commit into a root-owned checkout straight from the repository and
+# refuses any commit that is not on the tracked branch or is older than the one
+# last applied, so compromising the web application does not grant root.
+#
+set -Eeuo pipefail
+
+SOURCE=/opt/swage
+CONFIG=/etc/swage/swage.conf
+APPLIED=/etc/swage/host-commit
+COMMIT=${1:-}
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "swage-host-migrate must run as root." >&2
+    exit 1
+fi
+
+if ! [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Usage: swage-host-migrate <40 character commit hash>" >&2
+    exit 1
+fi
+
+set -a
+. "$CONFIG"
+set +a
+
+export GIT_SSH_COMMAND="ssh -i /root/.ssh/swage_deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes"
+
+exec 9> /run/swage-host-migrate.lock
+flock -w 600 9
+
+git -C "$SOURCE" fetch --quiet --depth 100 origin "$BRANCH"
+
+if ! git -C "$SOURCE" merge-base --is-ancestor "$COMMIT" FETCH_HEAD 2> /dev/null; then
+    echo "Commit $COMMIT is not on the $BRANCH branch of $REPOSITORY." >&2
+    exit 1
+fi
+
+# An older commit is on the branch too, and checking it out would reinstall this runner as it was then, so the host
+# only moves forward from the last commit it was migrated to.
+if [ -s "$APPLIED" ]; then
+    PREVIOUS=$(cat "$APPLIED")
+
+    if ! git -C "$SOURCE" cat-file -e "$PREVIOUS^{commit}" 2> /dev/null; then
+        git -C "$SOURCE" fetch --quiet --unshallow origin "$BRANCH" 2> /dev/null || true
+    fi
+
+    if ! git -C "$SOURCE" merge-base --is-ancestor "$PREVIOUS" "$COMMIT" 2> /dev/null; then
+        echo "Commit $COMMIT is older than $PREVIOUS, which this host was last migrated to." >&2
+        exit 1
+    fi
+fi
+
+git -C "$SOURCE" checkout --quiet --force --detach "$COMMIT"
+
+printf '%s\n' "$COMMIT" > "$APPLIED"
+chmod 600 "$APPLIED"
+
+# The runner logic lives in the repository so it can change with each release.
+exec bash "$SOURCE/resources/scripts/host/migrate.sh"
