@@ -3,8 +3,8 @@
 namespace App\Plugins;
 
 /**
- * Names a server or site integration's tab on the Plugins page, where each integration has a tab of its own once more
- * than one is installed. Integrations that don't implement it are named after their id.
+ * Names a server or site integration's tab on the Plugins page, where each integration has a tab of its own.
+ * Integrations that don't implement it are named after their id.
  */
 interface HasPluginTab
 {

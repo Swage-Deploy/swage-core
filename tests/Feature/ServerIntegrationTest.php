@@ -14,15 +14,14 @@ function fakeServerIntegration(array $secrets = []): FakeServerIntegration
     return tap(new FakeServerIntegration($secrets), fn (FakeServerIntegration $integration) => app(ServerIntegrations::class)->register($integration));
 }
 
-test('a server\'s plugins tab shows the panel of its only integration, without tabs', function () {
+test('a server\'s plugins tab shows its only integration under a tab of its own', function () {
     fakeServerIntegration();
     $server = Server::factory()->create(['name' => 'web-1']);
 
     $this->actingAs($server->user)
         ->get(route('servers.plugins', $server))
         ->assertOk()
-        ->assertSee('Fake integration for web-1')
-        ->assertDontSee('Fake Server Integration');
+        ->assertSeeInOrder(['Fake Server Integration', 'Fake integration for web-1']);
 });
 
 test('a server\'s plugins tab gives each integration a tab, showing one at a time', function () {
