@@ -133,6 +133,23 @@ test('a repository is installed from another provider, which records its clone u
     $shell->assertRan($site->deployKeyPath());
 });
 
+test('a provider repository cannot climb out of its path in the provider\'s api', function (string $repository) {
+    $provider = fakeProvider();
+    Queue::fake();
+    $site = Site::factory()->create();
+    SourceControlConnection::factory()->for($site->server->user)->create(['provider' => 'provision-git']);
+
+    Livewire::actingAs($site->server->user)->test('pages::sites.show', ['server' => $site->server, 'site' => $site])
+        ->set('repository', $repository)
+        ->set('branch', 'main')
+        ->call('installRepository')
+        ->assertHasErrors(['repository' => 'Choose a repository.']);
+
+    expect($site->fresh()->repository)->toBeNull()
+        ->and($provider->client->calls)->toBe([]);
+    Queue::assertNothingPushed();
+})->with(['team/../../user/keys', '../team/api', 'team/./api', 'team/api/..']);
+
 test('quick deploy creates a webhook on the site\'s provider that its pushes deploy through', function () {
     $provider = fakeProvider();
     Queue::fake([DeploySite::class]);

@@ -39,9 +39,11 @@ class InstallSiteRepository
             // A clone URL is quoted into shell commands, so it may only hold the characters SSH URLs use.
             'repository' => $custom
                 ? ['required', 'string', 'max:255', 'regex:/^(ssh:\/\/)?[A-Za-z0-9._-]+@[A-Za-z0-9.-]+(:[0-9]+)?[:\/][A-Za-z0-9._~\/-]+$/D']
-                : ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/D'],
+                // A repository's name goes into the provider's API paths, so "." and ".." could reach other endpoints.
+                : ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/D', 'not_regex:/(^|\/)\.{1,2}(\/|$)/'],
             'branch' => ['required', 'string', 'max:255', 'regex:/^[A-Za-z0-9._\/-]+$/D', 'not_regex:/\.\./'],
         ], [
+            'repository.not_regex' => __('Choose a repository.'),
             'repository.regex' => $custom ? __('Enter an SSH clone URL, such as git@git.example.com:team/app.git.') : __('Choose a repository.'),
         ])->validate();
 
