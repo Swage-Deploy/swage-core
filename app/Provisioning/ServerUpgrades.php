@@ -5,6 +5,7 @@ namespace App\Provisioning;
 use App\Models\Server;
 use App\Provisioning\Upgrades\AutomaticSecurityUpdates;
 use App\Provisioning\Upgrades\CloudflareVisitorAddresses;
+use App\Provisioning\Upgrades\PrivateRedisForIsolatedSites;
 use App\Provisioning\Upgrades\RedisAuthentication;
 use App\Provisioning\Upgrades\RestrictSudo;
 use App\Provisioning\Upgrades\RootOwnedDaemonLogs;
@@ -30,6 +31,7 @@ final class ServerUpgrades
         RootOwnedDaemonLogs::ID => RootOwnedDaemonLogs::class,
         AutomaticSecurityUpdates::ID => AutomaticSecurityUpdates::class,
         CloudflareVisitorAddresses::ID => CloudflareVisitorAddresses::class,
+        PrivateRedisForIsolatedSites::ID => PrivateRedisForIsolatedSites::class,
     ];
 
     /**

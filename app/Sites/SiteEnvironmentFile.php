@@ -16,7 +16,8 @@ class SiteEnvironmentFile
     public function __construct(protected RemoteShell $shell) {}
 
     /**
-     * Get the site's environment values, or null when the site has no .env.
+     * Get the site's environment values, or null when the site has no .env. It is read as the site's user, so a link the
+     * user puts in its place cannot make root read another file.
      *
      * @return array<string, string|null>|null
      *
@@ -26,7 +27,7 @@ class SiteEnvironmentFile
     {
         $path = escapeshellarg($site->path().'/shared/.env');
 
-        $result = $this->shell->run($site->server, "if [ -f {$path} ]; then echo SWAGE_ENV_FOUND; cat {$path}; fi", timeout: 30);
+        $result = $this->shell->run($site->server, "if [ -f {$path} ]; then echo SWAGE_ENV_FOUND; cat {$path}; fi", as: $site->systemUser(), timeout: 30);
 
         if ($result->failed()) {
             throw new RuntimeException("Unable to read the environment of {$site->domain}.");

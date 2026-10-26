@@ -10,11 +10,13 @@ use App\Models\Site;
 use App\Provisioning\ServerTuner;
 use App\Provisioning\ServerUpgrades;
 use App\Provisioning\ServiceConfigFiles;
+use App\Provisioning\Upgrades\PrivateRedisForIsolatedSites;
 use App\Provisioning\Upgrades\RedisAuthentication;
 use App\Provisioning\Upgrades\RestrictSudo;
 use App\Provisioning\Upgrades\RootOwnedDaemonLogs;
 use App\Provisioning\Upgrades\SeparateNginxUser;
 use App\Provisioning\Upgrades\SiteDatabaseUsers;
+use App\Sites\SiteEnvironmentFile;
 use App\Ssh\ScriptResult;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -253,6 +255,64 @@ test('a site that fails to move to private redis stays on the shared server', fu
         ->call('enablePrivateRedis');
 
     expect($site->fresh()->private_redis)->toBeFalse();
+});
+
+test('isolated sites on the shared redis move to private redis, then the shared password changes without refusing a site', function () {
+    $shell = fakeShell();
+    $server = legacyServer(['has_redis' => true, 'redis_password' => 'OldSharedPassword0123456789abcdefghijklm']);
+    $server->markUpgradeApplied(RedisAuthentication::ID);
+    $previous = $server->redis_password;
+    $isolated = Site::factory()->for($server)->isolated('example')->create(['private_redis' => false]);
+    $alreadyPrivate = Site::factory()->for($server)->isolated('other')->create(['private_redis' => true]);
+    $shared = Site::factory()->for($server)->create();
+    $remote = Site::factory()->for($server)->create();
+
+    respondWithEnvironment($shell, $shared, "REDIS_HOST=127.0.0.1\nREDIS_USERNAME=swage\nREDIS_PASSWORD={$previous}");
+    respondWithEnvironment($shell, $remote, 'REDIS_HOST=cache.internal');
+
+    app(PrivateRedisForIsolatedSites::class)->apply($server);
+
+    $server->refresh();
+    $password = $server->redis_password;
+    $scripts = scriptsRun($shell);
+    $added = collect($scripts)->search(fn (string $script): bool => str_contains($script, 'Added a new password'));
+    $switched = collect($scripts)->search(fn (string $script): bool => str_contains($script, 'swage_env_set REDIS_PASSWORD '.escapeshellarg(base64_encode("REDIS_PASSWORD={$password}"))));
+    $removed = collect($scripts)->search(fn (string $script): bool => str_contains($script, 'Removed the old password'));
+
+    expect($isolated->fresh()->private_redis)->toBeTrue()
+        ->and(implode("\n", $scripts))->toContain('systemctl restart swage-redis@example')
+        ->not->toContain('systemctl restart swage-redis@other')
+        ->and($password)->not->toBe($previous)->toHaveLength(40)
+        ->and($added)->toBeInt()->toBeLessThan($switched)
+        ->and($switched)->toBeLessThan($removed)
+        ->and($scripts[$added])->toContain("REDISCLI_AUTH='{$previous}'")
+        ->toContain("ACL SETUSER swage '#".hash('sha256', $password)."'")
+        ->not->toContain('reset')
+        ->not->toContain($password)
+        ->and($scripts[$removed])->toContain("REDISCLI_AUTH='{$password}'")
+        ->toContain("ACL SETUSER swage reset on '#".hash('sha256', $password)."'")
+        ->toContain('user swage on #'.hash('sha256', $password))
+        ->not->toContain(hash('sha256', $previous))
+        ->and(substr_count(implode("\n", $scripts), 'swage_env_set REDIS_PASSWORD'))->toBe(1);
+});
+
+test('servers without redis have nothing to move to private redis', function () {
+    $shell = fakeShell();
+    $server = legacyServer(['has_redis' => false, 'redis_password' => null]);
+    Site::factory()->for($server)->isolated('example')->create(['private_redis' => false]);
+
+    app(PrivateRedisForIsolatedSites::class)->apply($server);
+
+    $shell->assertNothingRan();
+});
+
+test('the environment is read as the site\'s user when swage needs its values', function () {
+    $shell = fakeShell();
+    $site = Site::factory()->isolated('example')->create();
+    respondWithEnvironment($shell, $site, 'APP_NAME=Example');
+
+    expect(app(SiteEnvironmentFile::class)->read($site))->toBe(['APP_NAME' => 'Example'])
+        ->and($shell->ran[0]['as'])->toBe('example');
 });
 
 test('daemons log to a root-owned directory once the server is upgraded', function () {
