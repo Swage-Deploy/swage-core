@@ -60,6 +60,10 @@ class CreateSite
             'database.not_regex' => __('This name is reserved by the database server. Choose another.'),
         ])->validate();
 
+        $aliases = SiteAliases::parse($validated['aliases'] ?? null, $validated['domain']);
+        SiteAliases::ensureAvailable($server, [$validated['domain']], 'domain');
+        SiteAliases::ensureAvailable($server, $aliases, 'aliases');
+
         $createDatabase = filter_var($input['create_database'] ?? false, FILTER_VALIDATE_BOOL);
 
         $systemUser = $isolated ? $validated['system_user'] : null;
@@ -73,7 +77,7 @@ class CreateSite
         return $this->handle($server, [
             'domain' => $validated['domain'],
             'system_user' => $systemUser,
-            'aliases' => SiteAliases::parse($validated['aliases'] ?? null, $validated['domain']),
+            'aliases' => $aliases,
             'web_directory' => $validated['web_directory'],
             'php_version' => $validated['php_version'],
             'zero_downtime' => filter_var($validated['zero_downtime'] ?? false, FILTER_VALIDATE_BOOL),

@@ -30,6 +30,7 @@ class UpdateSiteSettings
         ])->validate();
 
         $aliases = SiteAliases::parse($validated['aliases'] ?? null, $site->domain);
+        SiteAliases::ensureAvailable($site->server, $aliases, 'aliases', except: $site);
         $previousBinary = $site->php_version->binary();
 
         $site->update([

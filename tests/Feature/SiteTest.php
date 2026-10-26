@@ -402,3 +402,42 @@ test('the sites list explains its ssl and zero downtime icons on hover', functio
         ->assertSee('No SSL certificate')
         ->assertSee('Zero downtime deployments');
 });
+
+test('a site cannot take a name another site on the same server answers to', function () {
+    Bus::fake();
+    $server = Server::factory()->create();
+    Site::factory()->for($server)->create(['domain' => 'shop.com', 'aliases' => ['www.shop.com']]);
+    $site = Site::factory()->for($server)->create(['domain' => 'example.com', 'aliases' => []]);
+
+    Livewire::actingAs($server->user)->test('pages::sites.settings', ['server' => $server, 'site' => $site])
+        ->set('aliases', 'www.example.com, WWW.SHOP.COM')
+        ->call('save')
+        ->assertHasErrors(['aliases' => 'www.shop.com is already used by shop.com on this server.']);
+
+    expect($site->fresh()->aliases)->toBe([]);
+
+    Livewire::actingAs($server->user)->test('pages::servers.sites', ['server' => $server])
+        ->set('domain', 'www.shop.com')
+        ->call('create')
+        ->assertHasErrors(['domain' => 'www.shop.com is already used by shop.com on this server.'])
+        ->set('domain', 'blog.com')
+        ->set('aliases', 'shop.com')
+        ->call('create')
+        ->assertHasErrors(['aliases' => 'shop.com is already used by shop.com on this server.']);
+
+    expect($server->sites()->count())->toBe(2);
+});
+
+test('a site keeps its own aliases and may share names with sites on other servers', function () {
+    Bus::fake();
+    $server = Server::factory()->create();
+    Site::factory()->create(['domain' => 'shop.com']);
+    $site = Site::factory()->for($server)->create(['domain' => 'example.com', 'aliases' => ['www.example.com']]);
+
+    Livewire::actingAs($server->user)->test('pages::sites.settings', ['server' => $server, 'site' => $site])
+        ->set('aliases', 'www.example.com, shop.com')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($site->fresh()->aliases)->toBe(['www.example.com', 'shop.com']);
+});

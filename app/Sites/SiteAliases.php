@@ -2,6 +2,8 @@
 
 namespace App\Sites;
 
+use App\Models\Server;
+use App\Models\Site;
 use Illuminate\Validation\ValidationException;
 
 class SiteAliases
@@ -27,5 +29,30 @@ class SiteAliases
         }
 
         return $aliases->all();
+    }
+
+    /**
+     * Refuse names another site on the server already answers to, as its domain or an alias.
+     *
+     * nginx serves a name from whichever site's config it loads first, so a second site claiming a name could take
+     * the first one's visitors.
+     *
+     * @param  list<string>  $names
+     *
+     * @throws ValidationException
+     */
+    public static function ensureAvailable(Server $server, array $names, string $field, ?Site $except = null): void
+    {
+        $taken = $server->sites()
+            ->when($except, fn ($query) => $query->whereKeyNot($except->getKey()))
+            ->get(['id', 'domain', 'aliases'])
+            ->flatMap(fn (Site $site): array => array_map(fn (string $name): array => [$name, $site->domain], $site->domains()))
+            ->mapWithKeys(fn (array $pair): array => [strtolower($pair[0]) => $pair[1]]);
+
+        foreach ($names as $name) {
+            if ($owner = $taken[strtolower($name)] ?? null) {
+                throw ValidationException::withMessages([$field => __(':name is already used by :site on this server.', ['name' => $name, 'site' => $owner])]);
+            }
+        }
     }
 }
