@@ -33,12 +33,11 @@ fi
 echo "Replacing {!! $database->name !!} with an empty database."
 mysql -e 'DROP DATABASE IF EXISTS `{!! $database->name !!}`; CREATE DATABASE `{!! $database->name !!}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;'
 
-{{-- In a grant, _ matches any character, so it is escaped to grant this database alone. --}}
 # The dump is imported as the database's owner, which can only reach this database, rather than as root.
 mysql <<'SWAGE_SQL'
 CREATE USER IF NOT EXISTS {!! $owner !!} IDENTIFIED BY '{!! $ownerPassword !!}' ACCOUNT LOCK;
 ALTER USER {!! $owner !!} IDENTIFIED BY '{!! $ownerPassword !!}' ACCOUNT UNLOCK;
-GRANT ALL PRIVILEGES ON `{!! str_replace('_', '\\_', $database->name) !!}`.* TO {!! $owner !!};
+GRANT ALL PRIVILEGES ON `{!! $database->grantName() !!}`.* TO {!! $owner !!};
 SWAGE_SQL
 
 cat > "$OWNER_CONFIG" <<'SWAGE_CNF'

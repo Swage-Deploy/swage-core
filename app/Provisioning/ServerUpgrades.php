@@ -5,6 +5,7 @@ namespace App\Provisioning;
 use App\Models\Server;
 use App\Provisioning\Upgrades\AutomaticSecurityUpdates;
 use App\Provisioning\Upgrades\CloudflareVisitorAddresses;
+use App\Provisioning\Upgrades\ExactDatabaseGrants;
 use App\Provisioning\Upgrades\PrivateRedisForIsolatedSites;
 use App\Provisioning\Upgrades\RedisAuthentication;
 use App\Provisioning\Upgrades\RestrictSudo;
@@ -34,6 +35,7 @@ final class ServerUpgrades
         CloudflareVisitorAddresses::ID => CloudflareVisitorAddresses::class,
         PrivateRedisForIsolatedSites::ID => PrivateRedisForIsolatedSites::class,
         SiteSymlinkOwnership::ID => SiteSymlinkOwnership::class,
+        ExactDatabaseGrants::ID => ExactDatabaseGrants::class,
     ];
 
     /**

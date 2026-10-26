@@ -1,15 +1,19 @@
 <?php
 
 use App\Enums\ConfigService;
+use App\Enums\DatabaseEngine;
 use App\Enums\PhpVersion;
 use App\Enums\ResourceStatus;
 use App\Jobs\UpgradeServer;
 use App\Models\Daemon;
+use App\Models\Database;
+use App\Models\DatabaseUser;
 use App\Models\Server;
 use App\Models\Site;
 use App\Provisioning\ServerTuner;
 use App\Provisioning\ServerUpgrades;
 use App\Provisioning\ServiceConfigFiles;
+use App\Provisioning\Upgrades\ExactDatabaseGrants;
 use App\Provisioning\Upgrades\PrivateRedisForIsolatedSites;
 use App\Provisioning\Upgrades\RedisAuthentication;
 use App\Provisioning\Upgrades\RestrictSudo;
@@ -333,6 +337,23 @@ test('sites only follow links to files their owner owns, which the upgrade write
         ->toContain("client_max_body_size 1g;\n")
         ->not->toContain('pending.com')
         ->toContain("nginx -t\nsystemctl reload nginx");
+});
+
+test('mysql users are granted exactly their databases, with _ in the names escaped', function () {
+    $shell = fakeShell();
+    $server = legacyServer(['has_mysql' => true]);
+    $shopDb = Database::factory()->for($server)->create(['name' => 'shop_db']);
+    $user = DatabaseUser::factory()->for($server)->create(['username' => 'shop', 'engine' => DatabaseEngine::Mysql]);
+    $user->databases()->attach($shopDb);
+    DatabaseUser::factory()->for($server)->create(['username' => 'reporting', 'engine' => DatabaseEngine::Postgres]);
+
+    app(ExactDatabaseGrants::class)->apply($server);
+
+    expect(scriptsRun($shell))->toHaveCount(1)
+        ->and($shell->lastScript())
+        ->toContain("REVOKE ALL PRIVILEGES, GRANT OPTION FROM 'shop'@'%';")
+        ->toContain("GRANT ALL PRIVILEGES ON `shop\\_db`.* TO 'shop'@'%';")
+        ->not->toContain('`shop_db`');
 });
 
 test('daemons log to a root-owned directory once the server is upgraded', function () {

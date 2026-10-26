@@ -38,7 +38,8 @@ CREATE USER IF NOT EXISTS '{!! $databaseUser->username !!}'@'%' IDENTIFIED BY '{
 ALTER USER '{!! $databaseUser->username !!}'@'%' IDENTIFIED BY '{!! $databaseUser->password !!}';
 REVOKE ALL PRIVILEGES, GRANT OPTION FROM '{!! $databaseUser->username !!}'@'%';
 @foreach ($grantedDatabases as $database)
-GRANT ALL PRIVILEGES ON `{!! $database->name !!}`.* TO '{!! $databaseUser->username !!}'@'%';
+{{-- The escaped name keeps the grant from also matching databases whose names differ where this one has _. --}}
+GRANT ALL PRIVILEGES ON `{!! $database->grantName() !!}`.* TO '{!! $databaseUser->username !!}'@'%';
 @endforeach
 FLUSH PRIVILEGES;
 SWAGE_EOF

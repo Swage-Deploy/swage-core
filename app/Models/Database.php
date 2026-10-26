@@ -44,6 +44,15 @@ class Database extends Model
     }
 
     /**
+     * The database's name as written in a MySQL grant, where _ and % match any characters unless escaped, so that a
+     * grant reaches this database alone.
+     */
+    public function grantName(): string
+    {
+        return addcslashes($this->name, '_%');
+    }
+
+    /**
      * The MySQL account a dump is restored as, which can only reach this database. It owns the views, triggers and
      * routines the dump creates, so it is kept, locked, between restores.
      */
