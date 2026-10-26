@@ -21,22 +21,26 @@ final readonly class LogFile
         public ?string $pattern = null,
         public ?string $unit = null,
         public ?int $scheduledJobId = null,
+        public ?string $readAs = null,
     ) {}
 
     /**
      * A log written to one file.
+     *
+     * A log in a directory a site's user can write to is read as that user, given as $readAs, so a link the user puts in
+     * the log's place cannot make root read another file.
      */
-    public static function file(string $key, string $label, string $group, string $path, ?int $scheduledJobId = null): self
+    public static function file(string $key, string $label, string $group, string $path, ?int $scheduledJobId = null, ?string $readAs = null): self
     {
-        return new self($key, $label, $group, path: $path, scheduledJobId: $scheduledJobId);
+        return new self($key, $label, $group, path: $path, scheduledJobId: $scheduledJobId, readAs: $readAs);
     }
 
     /**
      * A log split across files, such as Laravel's daily logs, of which the most recently written is shown.
      */
-    public static function newest(string $key, string $label, string $group, string $directory, string $pattern): self
+    public static function newest(string $key, string $label, string $group, string $directory, string $pattern, ?string $readAs = null): self
     {
-        return new self($key, $label, $group, directory: $directory, pattern: $pattern);
+        return new self($key, $label, $group, directory: $directory, pattern: $pattern, readAs: $readAs);
     }
 
     /**

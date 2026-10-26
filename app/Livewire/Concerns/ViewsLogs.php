@@ -120,7 +120,7 @@ trait ViewsLogs
         $this->readError = null;
 
         try {
-            $result = $shell->run($this->server, $log->command($this->lines, $this->filter), timeout: 30);
+            $result = $shell->run($this->server, $log->command($this->lines, $this->filter), as: $log->readAs, timeout: 30);
         } catch (Throwable $exception) {
             $this->readError = $exception->getMessage();
 

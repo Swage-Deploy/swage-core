@@ -22,7 +22,7 @@ class LogFiles
     public static function forSite(Site $site): array
     {
         $logs = [
-            LogFile::newest('laravel', 'Laravel', __('Application'), self::applicationLogDirectory($site), 'laravel*.log'),
+            LogFile::newest('laravel', 'Laravel', __('Application'), self::applicationLogDirectory($site), 'laravel*.log', readAs: $site->systemUser()),
         ];
 
         foreach ($site->scheduledJobs()->oldest('id')->get() as $scheduledJob) {
@@ -121,7 +121,13 @@ class LogFiles
 
     protected static function daemon(Daemon $daemon, ?string $label = null): LogFile
     {
-        return LogFile::file("daemon-{$daemon->id}", $label ?? __('Daemon #:id', ['id' => $daemon->id]), __('Processes'), $daemon->logPath());
+        return LogFile::file(
+            "daemon-{$daemon->id}",
+            $label ?? __('Daemon #:id', ['id' => $daemon->id]),
+            __('Processes'),
+            $daemon->logPath(),
+            readAs: $daemon->logsToRootOwnedDirectory() ? null : config('swage.user'),
+        );
     }
 
     protected static function scheduledJob(ScheduledJob $scheduledJob, ?string $label = null): LogFile
@@ -132,6 +138,7 @@ class LogFiles
             __('Scheduled jobs'),
             $scheduledJob->logPath(),
             scheduledJobId: $scheduledJob->id,
+            readAs: $scheduledJob->user === 'root' ? null : $scheduledJob->user,
         );
     }
 }

@@ -83,6 +83,32 @@ test('a site\'s laravel log is shown with secrets masked', function () {
     $shell->assertRan("f='/var/log/nginx/example.com-error.log'");
 });
 
+test('logs a site\'s user can write to are read as that user, so a link in their place cannot make root read another file', function () {
+    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com']);
+    $scheduler = $site->server->scheduledJobs()->create([
+        'site_id' => $site->id, 'command' => SiteCommands::scheduler($site), 'user' => 'example', 'frequency' => '* * * * *', 'status' => ResourceStatus::Installed,
+    ]);
+    $rootJob = $site->server->scheduledJobs()->create([
+        'site_id' => $site->id, 'command' => 'true', 'user' => 'root', 'frequency' => '* * * * *', 'status' => ResourceStatus::Installed,
+    ]);
+    $legacyWorker = Daemon::factory()->for($site->server)->create(['site_id' => $site->id, 'user' => 'example']);
+    $logs = collect(LogFiles::forSite($site))->keyBy('key');
+
+    expect($logs['laravel']->readAs)->toBe('example')
+        ->and($logs["scheduled-job-{$scheduler->id}"]->readAs)->toBe('example')
+        ->and($logs["scheduled-job-{$rootJob->id}"]->readAs)->toBeNull()
+        ->and($logs["daemon-{$legacyWorker->id}"]->readAs)->toBe('swage')
+        ->and($logs['nginx-access']->readAs)->toBeNull();
+
+    $shell = fakeShell();
+
+    Livewire::actingAs($site->server->user)->test('pages::sites.logs', ['server' => $site->server, 'site' => $site])
+        ->call('readLog')
+        ->set('log', 'nginx-error');
+
+    expect(collect($shell->ran)->pluck('as')->all())->toBe(['example', null]);
+});
+
 test('the scheduler box links to its log, which offers a reinstall when nothing was logged yet', function () {
     Bus::fake();
     $site = Site::factory()->create();

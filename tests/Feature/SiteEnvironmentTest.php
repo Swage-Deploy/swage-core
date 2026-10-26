@@ -74,6 +74,16 @@ test('the environment is only read from the server once revealed', function () {
         ->assertDontSee('secret-key');
 });
 
+test('the environment is read as the site\'s user, so a link in its place cannot make root read another file', function () {
+    $shell = fakeShell()->respondTo('.env', new ScriptResult(0, "APP_NAME=Example\n"));
+    $site = Site::factory()->isolated('example')->create();
+
+    siteEnvironment($site)->call('reveal');
+
+    expect($shell->ran)->toHaveCount(1)
+        ->and($shell->ran[0]['as'])->toBe('example');
+});
+
 test('a failed read is shown with the option to try again', function () {
     fakeShell()->respondTo('.env', new ScriptResult(1, 'No such file or directory'));
 
