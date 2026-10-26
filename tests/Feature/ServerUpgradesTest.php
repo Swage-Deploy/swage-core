@@ -16,7 +16,9 @@ use App\Provisioning\Upgrades\RestrictSudo;
 use App\Provisioning\Upgrades\RootOwnedDaemonLogs;
 use App\Provisioning\Upgrades\SeparateNginxUser;
 use App\Provisioning\Upgrades\SiteDatabaseUsers;
+use App\Provisioning\Upgrades\SiteSymlinkOwnership;
 use App\Sites\SiteEnvironmentFile;
+use App\Sites\SiteNginxConfig;
 use App\Ssh\ScriptResult;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
@@ -313,6 +315,24 @@ test('the environment is read as the site\'s user when swage needs its values', 
 
     expect(app(SiteEnvironmentFile::class)->read($site))->toBe(['APP_NAME' => 'Example'])
         ->and($shell->ran[0]['as'])->toBe('example');
+});
+
+test('sites only follow links to files their owner owns, which the upgrade writes into every installed site', function () {
+    $shell = fakeShell();
+    $server = legacyServer();
+    $installed = Site::factory()->for($server)->create(['domain' => 'shop.com', 'status' => ResourceStatus::Installed, 'nginx_override' => 'client_max_body_size 1g;']);
+    Site::factory()->for($server)->create(['domain' => 'pending.com', 'status' => ResourceStatus::Pending]);
+
+    expect(SiteNginxConfig::for($installed)->base())->toContain('disable_symlinks if_not_owner from=$document_root;');
+
+    app(SiteSymlinkOwnership::class)->apply($server);
+
+    expect($shell->lastScript())
+        ->toContain("cat > '/etc/nginx/sites-available/shop.com'")
+        ->toContain('disable_symlinks if_not_owner from=$document_root;')
+        ->toContain("client_max_body_size 1g;\n")
+        ->not->toContain('pending.com')
+        ->toContain("nginx -t\nsystemctl reload nginx");
 });
 
 test('daemons log to a root-owned directory once the server is upgraded', function () {

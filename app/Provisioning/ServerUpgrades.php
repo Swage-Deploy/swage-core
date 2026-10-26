@@ -12,6 +12,7 @@ use App\Provisioning\Upgrades\RootOwnedDaemonLogs;
 use App\Provisioning\Upgrades\SeparateNginxUser;
 use App\Provisioning\Upgrades\ServerUpgrade;
 use App\Provisioning\Upgrades\SiteDatabaseUsers;
+use App\Provisioning\Upgrades\SiteSymlinkOwnership;
 
 /**
  * The upgrades existing servers need to match what Swage provisions today.
@@ -32,6 +33,7 @@ final class ServerUpgrades
         AutomaticSecurityUpdates::ID => AutomaticSecurityUpdates::class,
         CloudflareVisitorAddresses::ID => CloudflareVisitorAddresses::class,
         PrivateRedisForIsolatedSites::ID => PrivateRedisForIsolatedSites::class,
+        SiteSymlinkOwnership::ID => SiteSymlinkOwnership::class,
     ];
 
     /**

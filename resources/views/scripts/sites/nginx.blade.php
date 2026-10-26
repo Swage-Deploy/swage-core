@@ -30,6 +30,8 @@ server {
 @endif
     server_name {!! implode(' ', $site->domains()) !!};
     root {!! $site->webRoot() !!};
+    {{-- A link in the site's files is only followed to something its owner also owns, so a site cannot serve another site's files through a link. --}}
+    disable_symlinks if_not_owner from=$document_root;
     index index.php index.html;
     charset utf-8;
 
