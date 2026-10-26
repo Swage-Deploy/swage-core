@@ -7,5 +7,5 @@ exit 1
 cd /
 sudo -u postgres psql -X -q -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS "{!! $database->name !!}" WITH (FORCE);'
 @else
-mysql -e 'DROP DATABASE IF EXISTS `{!! $database->name !!}`;'
+mysql -e "DROP DATABASE IF EXISTS \`{!! $database->name !!}\`; DROP USER IF EXISTS '{!! $database->ownerAccount() !!}'@'localhost';"
 @endif

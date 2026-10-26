@@ -44,6 +44,15 @@ class Database extends Model
     }
 
     /**
+     * The MySQL account a dump is restored as, which can only reach this database. It owns the views, triggers and
+     * routines the dump creates, so it is kept, locked, between restores.
+     */
+    public function ownerAccount(): string
+    {
+        return "swage-owner-{$this->id}";
+    }
+
+    /**
      * Determine if the database can be exported or restored from a file now. Only MySQL databases can, and not while
      * something else is changing them.
      */

@@ -44,6 +44,7 @@ class RestoreDatabase implements ShouldQueue
             'database' => $this->database,
             'path' => $remotePath,
             'compressed' => $compressed,
+            'ownerPassword' => Str::password(40, symbols: false),
         ]), timeout: $this->timeout - 60);
 
         $this->database->update(['status' => ResourceStatus::Installed]);

@@ -3,6 +3,7 @@
 use App\Enums\MemberRole;
 use App\Enums\ResourceStatus;
 use App\Enums\TaskStatus;
+use App\Jobs\DeleteDatabase;
 use App\Jobs\RestoreDatabase;
 use App\Models\Database;
 use App\Models\Server;
@@ -109,11 +110,53 @@ test('a database is restored from an uploaded dump after its name is typed', fun
         ->toContain($shell->uploaded[0]['remote'])
         ->toContain('DROP DATABASE IF EXISTS `shop`; CREATE DATABASE `shop`')
         ->toContain("cat '{$shell->uploaded[0]['remote']}'")
-        ->toContain("| mysql --default-character-set=utf8mb4 'shop'")
+        ->toContain("| mysql --defaults-extra-file=\"\$OWNER_CONFIG\" --binary-mode --default-character-set=utf8mb4 'shop'")
         ->not->toContain('gunzip');
 
     expect($database->fresh()->status)->toBe(ResourceStatus::Installed)
         ->and(Storage::disk('local')->allFiles('database-restores'))->toBeEmpty();
+});
+
+test('a dump is imported as an account that can only reach its database, and cannot run client commands', function () {
+    Storage::fake('local');
+    $shell = fakeShell();
+    $database = Database::factory()->create(['name' => 'shop_db']);
+    $owner = "'swage-owner-{$database->id}'@'localhost'";
+
+    Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
+        ->call('startRestore', $database->id)
+        ->set('restoreFile', UploadedFile::fake()->createWithContent('shop.sql', 'CREATE TABLE orders (id int);'))
+        ->set('restoreConfirmation', 'shop_db')
+        ->call('restoreDatabase')
+        ->assertHasNoErrors();
+
+    $script = $shell->lastScript();
+
+    expect($script)
+        ->toContain("CREATE USER IF NOT EXISTS {$owner}")
+        ->toContain("ALTER USER {$owner} IDENTIFIED BY")
+        ->toContain('ACCOUNT UNLOCK')
+        ->toContain("GRANT ALL PRIVILEGES ON `shop\\_db`.* TO {$owner};")
+        ->toContain("user=swage-owner-{$database->id}")
+        ->toContain('--binary-mode')
+        ->toContain("mysql -e \"ALTER USER IF EXISTS {$owner} ACCOUNT LOCK;\"")
+        ->toContain('trap swage_cleanup EXIT')
+        ->toContain("-e '/^SET @@(SESSION\\.SQL_LOG_BIN|GLOBAL\\.GTID_PURGED)[[:space:]]*=/d'")
+        ->not->toMatch('/\\| mysql --default-character-set/');
+
+    preg_match("/IDENTIFIED BY '([A-Za-z0-9]+)' ACCOUNT UNLOCK/", $script, $matches);
+
+    expect($matches[1])->toHaveLength(40)
+        ->and($database->server->fresh()->tasks()->latest('id')->first()->output ?? '')->not->toContain($matches[1]);
+});
+
+test('deleting a mysql database also drops the account its dumps were restored as', function () {
+    $shell = fakeShell();
+    $database = Database::factory()->create(['name' => 'shop']);
+
+    DeleteDatabase::dispatchSync($database);
+
+    $shell->assertRan("DROP USER IF EXISTS 'swage-owner-{$database->id}'@'localhost';");
 });
 
 test('a gzipped dump is recognised by its contents and unzipped on the server', function () {
@@ -194,12 +237,13 @@ test('postgres databases cannot be restored from a file', function () {
 test('the restore script refuses dumps that switch databases and drops definers', function () {
     $database = Database::factory()->create(['name' => 'shop']);
 
-    $script = Script::render('databases.restore', ['database' => $database, 'path' => '/root/swage-restore-x.sql', 'compressed' => false]);
+    $script = Script::render('databases.restore', ['database' => $database, 'path' => '/root/swage-restore-x.sql', 'compressed' => false, 'ownerPassword' => 'secret']);
 
     expect($script)
         ->toContain("grep -iE '^[[:space:]]*(USE|CREATE[[:space:]]+(DATABASE|SCHEMA))[[:space:]]'")
-        ->toContain("sed -E 's/DEFINER=`[^`]*`@`[^`]*`//g'")
-        ->toContain("trap \"rm -f '/root/swage-restore-x.sql'\" EXIT");
+        ->toContain("sed -E -e 's/DEFINER=`[^`]*`@`[^`]*`//g'")
+        ->toContain("rm -f '/root/swage-restore-x.sql' \"\$OWNER_CONFIG\"")
+        ->toContain('trap swage_cleanup EXIT');
 });
 
 test('a failed restore marks the database failed and removes the uploaded file', function () {
