@@ -599,6 +599,32 @@ test('every plugin with a newer version is updated in a single rebuild', functio
         ->and(SelfUpdate::sole()->title())->toBe('Update acme/swage-bitbucket, acme/swage-gitea');
 });
 
+test('updating all plugins only updates those in the tab being viewed', function () {
+    fakePluginIndex([
+        ['name' => 'acme/swage-gitea', 'kind' => 'source-control', 'repository' => 'https://github.com/acme/swage-gitea.git'],
+        ['name' => 'acme/swage-uptime', 'kind' => 'site-integration', 'repository' => 'https://github.com/acme/swage-uptime.git'],
+        ['name' => 'acme/swage-logs', 'kind' => 'site-integration', 'repository' => 'https://github.com/acme/swage-logs.git'],
+    ]);
+    installedPlugin('v1.1.0', '9999999999999999999999999999999999999999');
+    foreach (['acme/swage-uptime', 'acme/swage-logs'] as $name) {
+        $checkout = str_replace('/', '-', $name).'-666666666666';
+        app(PluginManifest::class)->save(new Plugin($name, PluginKind::SiteIntegration, "https://github.com/{$name}.git", 'v1.1.0', '6666666666666666666666666666666666666666', $checkout, now()->toIso8601String()));
+    }
+    Process::fake(["'git' 'ls-remote' *" => PLUGIN_REFS]);
+    Queue::fake();
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index', ['category' => 'system'])
+        ->call('checkForUpdates')
+        ->assertDontSee('Update all');
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index', ['category' => 'site'])
+        ->call('checkForUpdates')
+        ->assertSee('Update all')
+        ->call('updateAll');
+
+    expect(SelfUpdate::sole()->plugin_operation)->toBe(['action' => 'update', 'names' => ['acme/swage-logs', 'acme/swage-uptime']]);
+});
+
 test('updating a plugin rebuilds swage with its newest version', function () {
     installedPlugin('v1.1.0', '9999999999999999999999999999999999999999');
     fakePluginRepository($this->composer);

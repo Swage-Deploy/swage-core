@@ -91,6 +91,19 @@ new #[Title('Plugins')] class extends Component {
     }
 
     /**
+     * Installed plugins in the tab being viewed that the last check found a newer version of.
+     *
+     * @return list<string>
+     */
+    public function updatableInCategory(): array
+    {
+        return array_values(array_filter(
+            array_map(fn (Plugin $plugin): string => $plugin->name, $this->installedInCategory),
+            fn (string $name): bool => is_array($this->updates[$name] ?? null),
+        ));
+    }
+
+    /**
      * Listed plugins in the tab being viewed that are not installed yet.
      *
      * @return array<string, IndexedPlugin>
@@ -256,13 +269,13 @@ new #[Title('Plugins')] class extends Component {
     }
 
     /**
-     * Update every plugin the last check found a newer version of, in a single rebuild.
+     * Update every plugin in the tab being viewed that the last check found a newer version of, in a single rebuild.
      */
     public function updateAll(): void
     {
         $this->authorize('administer');
 
-        $names = array_keys(array_filter($this->updates, 'is_array'));
+        $names = $this->updatableInCategory();
 
         abort_if($names === [], 409);
 
@@ -457,9 +470,9 @@ new #[Title('Plugins')] class extends Component {
             @if ($this->plugins !== [])
                 <x-slot:actions>
                     <div wire:init="checkForUpdates" class="flex items-center gap-2">
-                        @if (count(array_filter($updates, 'is_array')) > 1)
+                        @if (count($this->updatableInCategory()) > 1)
                             <flux:button size="sm" variant="primary" icon="arrow-up-circle" wire:click="updateAll"
-                                wire:confirm="{{ __('Update every plugin with a newer version and rebuild Swage once with all of them?') }}">{{ __('Update all') }}</flux:button>
+                                wire:confirm="{{ __('Update every :category plugin with a newer version and rebuild Swage once with all of them?', ['category' => strtolower($this->currentCategory->label())]) }}">{{ __('Update all') }}</flux:button>
                         @endif
                         <flux:button size="sm" variant="ghost" icon="arrow-path" wire:click="checkForUpdates(true)" wire:loading.attr="disabled" wire:target="checkForUpdates">
                             {{ $checkedForUpdates ? __('Check again') : __('Checking...') }}
