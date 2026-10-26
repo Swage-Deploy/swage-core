@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Sites\ChangeSiteDomain;
 use App\Actions\Sites\DeleteSite;
 use App\Actions\Sites\EnablePrivateRedis;
 use App\Actions\Sites\SetOctane;
@@ -26,6 +27,10 @@ new class extends Component {
 
     public string $confirmation = '';
 
+    public string $domain = '';
+
+    public bool $keepOldDomain = true;
+
     public bool $octane = false;
 
     public function mount(): void
@@ -33,6 +38,7 @@ new class extends Component {
         $this->authorize('view', $this->site);
 
         $this->aliases = implode(', ', $this->site->aliases ?? []);
+        $this->domain = $this->site->domain;
         $this->web_directory = $this->site->web_directory;
         $this->php_version = $this->site->php_version->value;
         $this->octane = $this->site->octane;
@@ -52,6 +58,24 @@ new class extends Component {
         Flux::toast(variant: 'success', text: __('Updating site configuration.'));
     }
 
+    /**
+     * Change the domain the site answers to first.
+     */
+    public function changeDomain(ChangeSiteDomain $changeSiteDomain): void
+    {
+        $this->authorize('update', $this->site);
+
+        $changeSiteDomain->handle($this->site, ['domain' => $this->domain, 'keep_old_domain' => $this->keepOldDomain]);
+
+        $this->domain = $this->site->domain;
+        $this->aliases = implode(', ', $this->site->aliases ?? []);
+        $this->keepOldDomain = true;
+
+        Flux::modal('change-domain')->close();
+        Flux::toast(variant: 'success', text: $this->site->certificate?->isActive()
+            ? __('Changing the domain and requesting a new certificate.')
+            : __('Changing the domain.'));
+    }
 
     /**
      * Switch the site between Octane and PHP-FPM.
@@ -119,6 +143,17 @@ new class extends Component {
 
             <x-panel icon="adjustments-horizontal" :heading="__('Site settings')">
             <form wire:submit="save" class="flex flex-col gap-6">
+                <flux:field>
+                    <flux:label>{{ __('Domain') }}</flux:label>
+                    <div class="flex items-center gap-2">
+                        <flux:input :value="$site->domain" readonly class="font-mono" />
+                        @can('update', $site)
+                            <flux:modal.trigger name="change-domain">
+                                <flux:button icon="pencil-square" :disabled="$site->status->isBusy()">{{ __('Change') }}</flux:button>
+                            </flux:modal.trigger>
+                        @endcan
+                    </div>
+                </flux:field>
                 <flux:input wire:model="aliases" :label="__('Aliases')" :description="__('Separate extra domains with commas or spaces.')" />
                 <flux:input wire:model="web_directory" :label="__('Web directory')" />
                 <flux:select wire:model="php_version" :label="__('PHP version')">
@@ -188,6 +223,31 @@ new class extends Component {
                 </section>
             @endcan
         </div>
+
+        <flux:modal name="change-domain" class="md:w-[28rem]">
+            <form wire:submit="changeDomain" class="flex flex-col gap-6">
+                <div>
+                    <flux:heading size="lg">{{ __('Change domain') }}</flux:heading>
+                    <flux:text class="mt-2">{{ __('The site\'s files stay where they are, in :path, and its workers keep running. APP_URL follows the new domain when it names the old one.', ['path' => $site->path()]) }}</flux:text>
+                </div>
+
+                <flux:input wire:model="domain" :label="__('New domain')" placeholder="example.com" class="font-mono" />
+                <flux:checkbox wire:model="keepOldDomain" :label="__('Keep :domain as an alias', ['domain' => $site->domain])" :description="__('Visitors and links using the old domain keep working.')" />
+
+                @if ($site->certificate?->isActive())
+                    <flux:callout icon="lock-closed" color="zinc">
+                        <flux:callout.text>{{ __('Swage requests a new certificate that covers the new domain. The current one keeps serving until it is issued, so point the new domain at this server first.') }}</flux:callout.text>
+                    </flux:callout>
+                @endif
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    <flux:button type="submit" variant="primary">{{ __('Change domain') }}</flux:button>
+                </div>
+            </form>
+        </flux:modal>
 
         <flux:modal name="private-redis" class="md:w-[28rem]">
             <div class="flex flex-col gap-6">

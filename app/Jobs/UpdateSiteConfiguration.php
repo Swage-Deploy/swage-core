@@ -18,7 +18,10 @@ class UpdateSiteConfiguration implements ShouldQueue
 
     public int $tries = 1;
 
-    public function __construct(public Site $site) {}
+    /**
+     * @param  ?string  $previousDomain  The domain the site had before it was changed, so APP_URL can follow it.
+     */
+    public function __construct(public Site $site, public ?string $previousDomain = null) {}
 
     /**
      * Execute the job.
@@ -30,6 +33,7 @@ class UpdateSiteConfiguration implements ShouldQueue
         $runTask->run($this->site->server, "Updating nginx for {$this->site->domain}", Script::render('sites.update-nginx', [
             'site' => $this->site,
             'certificate' => $certificate,
+            'previousDomain' => $this->previousDomain,
         ]));
 
         $this->site->update(['status' => ResourceStatus::Installed]);

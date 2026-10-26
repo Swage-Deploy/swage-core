@@ -33,8 +33,8 @@ class LogFiles
             $logs[] = self::daemon($daemon, $daemon->isOctane() ? 'Octane' : __('Queue worker #:id', ['id' => $daemon->id]));
         }
 
-        $logs[] = LogFile::file('nginx-access', __('nginx access'), __('Web server'), "/var/log/nginx/{$site->domain}-access.log");
-        $logs[] = LogFile::file('nginx-error', __('nginx errors'), __('Web server'), "/var/log/nginx/{$site->domain}-error.log");
+        $logs[] = LogFile::file('nginx-access', __('nginx access'), __('Web server'), "/var/log/nginx/{$site->directoryName()}-access.log");
+        $logs[] = LogFile::file('nginx-error', __('nginx errors'), __('Web server'), "/var/log/nginx/{$site->directoryName()}-error.log");
         $logs[] = self::phpFpm($site->php_version->value);
 
         if ($site->private_redis) {

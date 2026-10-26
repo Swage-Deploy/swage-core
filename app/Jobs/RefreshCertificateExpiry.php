@@ -34,12 +34,12 @@ class RefreshCertificateExpiry implements ShouldQueue
      */
     public function handle(RemoteShell $shell): void
     {
-        $certificates = $this->certificates->loadMissing('site')->keyBy(fn (Certificate $certificate): string => $certificate->site->domain);
+        $certificates = $this->certificates->loadMissing('site')->keyBy(fn (Certificate $certificate): string => $certificate->site->directoryName());
 
-        $script = $certificates->keys()->map(fn (string $domain): string => sprintf(
+        $script = $certificates->keys()->map(fn (string $name): string => sprintf(
             'f=%s; if [ -f "$f" ]; then echo "SWAGE_CERT %s $(openssl x509 -enddate -noout -in "$f" | cut -d= -f2)"; fi',
-            escapeshellarg("/etc/letsencrypt/live/{$domain}/cert.pem"),
-            $domain,
+            escapeshellarg("/etc/letsencrypt/live/{$name}/cert.pem"),
+            $name,
         ))->implode("\n");
 
         try {
@@ -50,8 +50,8 @@ class RefreshCertificateExpiry implements ShouldQueue
 
         preg_match_all('/^SWAGE_CERT (\S+) (.+)$/m', $result->output, $matches, PREG_SET_ORDER);
 
-        foreach ($matches as [, $domain, $expiresAt]) {
-            $certificates->get($domain)?->update(['expires_at' => Carbon::parse(trim($expiresAt))]);
+        foreach ($matches as [, $name, $expiresAt]) {
+            $certificates->get($name)?->update(['expires_at' => Carbon::parse(trim($expiresAt))]);
         }
     }
 }

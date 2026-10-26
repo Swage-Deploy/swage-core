@@ -1,11 +1,11 @@
 set -Eeuo pipefail
 
-rm -f /etc/nginx/sites-enabled/{!! $site->domain !!} /etc/nginx/sites-available/{!! $site->domain !!} {!! escapeshellarg(App\Sites\SiteNginxConfig::overridePath($site)) !!}
+rm -f /etc/nginx/sites-enabled/{!! $site->directoryName() !!} /etc/nginx/sites-available/{!! $site->directoryName() !!} {!! escapeshellarg(App\Sites\SiteNginxConfig::overridePath($site)) !!}
 nginx -t
 systemctl reload nginx
 
 # Remove any certificate, so certbot stops renewing it for a domain the server no longer serves.
-certbot delete --non-interactive --cert-name '{!! $site->domain !!}' > /dev/null 2>&1 || true
+certbot delete --non-interactive --cert-name '{!! $site->directoryName() !!}' > /dev/null 2>&1 || true
 
 @if ($site->isIsolated())
 # Remove the site's PHP-FPM pool and its user, with everything in the user's home.

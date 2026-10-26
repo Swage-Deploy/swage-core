@@ -21,8 +21,8 @@ server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
 
-    ssl_certificate /etc/letsencrypt/live/{!! $site->domain !!}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{!! $site->domain !!}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/{!! $site->directoryName() !!}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{!! $site->directoryName() !!}/privkey.pem;
     add_header Strict-Transport-Security "max-age=31536000" always;
 @else
     listen 80;
@@ -39,8 +39,8 @@ server {
     include {!! App\Sites\CloudflareNetworks::CONFIG_PATH !!};
     real_ip_header CF-Connecting-IP;
 
-    access_log /var/log/nginx/{!! $site->domain !!}-access.log;
-    error_log /var/log/nginx/{!! $site->domain !!}-error.log error;
+    access_log /var/log/nginx/{!! $site->directoryName() !!}-access.log;
+    error_log /var/log/nginx/{!! $site->directoryName() !!}-error.log error;
 @if ($clientMaxBodySize = App\Sites\SitePhpSettings::for($site)->clientMaxBodySize())
 
     client_max_body_size {!! $clientMaxBodySize !!};

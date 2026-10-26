@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use LogicException;
 
 #[Fillable([
-    'domain', 'system_user', 'private_redis', 'aliases', 'web_directory', 'php_version', 'status', 'source_control',
+    'domain', 'directory', 'system_user', 'private_redis', 'aliases', 'web_directory', 'php_version', 'status', 'source_control',
     'repository', 'clone_url', 'branch', 'deploy_key_private', 'deploy_key_public', 'deploy_key_id', 'webhook_id',
     'webhook_secret', 'deploy_script', 'quick_deploy', 'deploy_token', 'zero_downtime', 'octane',
     'octane_port', 'nginx_override', 'php_settings', 'install_error',
@@ -56,6 +56,14 @@ class Site extends Model
             if ($site->isDirty('system_user')) {
                 throw new LogicException('The system user of a site cannot be changed after it is created.');
             }
+
+            if ($site->isDirty('directory')) {
+                throw new LogicException('The directory of a site cannot be changed after it is created.');
+            }
+        });
+
+        static::creating(function (Site $site): void {
+            $site->directory ??= $site->domain;
         });
 
         static::saving(function (Site $site): void {
@@ -199,11 +207,20 @@ class Site extends Model
     }
 
     /**
+     * Get the name of the site's directory, nginx config, logs and certificate on the server. It is the domain the site
+     * was created with, and stays the same when the domain changes.
+     */
+    public function directoryName(): string
+    {
+        return $this->directory ?? $this->domain;
+    }
+
+    /**
      * Get the site's root directory on the server.
      */
     public function path(): string
     {
-        return $this->homePath().'/'.$this->domain;
+        return $this->homePath().'/'.$this->directoryName();
     }
 
     /**

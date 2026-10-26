@@ -31,7 +31,7 @@ final class SiteNginxConfig
      */
     public static function overridePath(Site $site): string
     {
-        return "/etc/nginx/swage/sites/{$site->domain}.conf";
+        return "/etc/nginx/swage/sites/{$site->directoryName()}.conf";
     }
 
     /**
@@ -52,7 +52,7 @@ final class SiteNginxConfig
         $override = filled($override) ? rtrim(str_replace("\r\n", "\n", $override)) : null;
 
         return [
-            "/etc/nginx/sites-available/{$this->site->domain}" => ConfigMerger::withoutOverridden($this->base(), $override, ConfigSyntax::Nginx, 'server')."\n",
+            "/etc/nginx/sites-available/{$this->site->directoryName()}" => ConfigMerger::withoutOverridden($this->base(), $override, ConfigSyntax::Nginx, 'server')."\n",
             self::overridePath($this->site) => $override === null ? '' : $override."\n",
         ];
     }
