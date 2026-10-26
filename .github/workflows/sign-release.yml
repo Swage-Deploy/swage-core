@@ -1,0 +1,131 @@
+# Signs and pushes a version tag, then publishes a GitHub release for it. swage-core and every plugin call this from
+# their own Release workflow, so releases are made the same way everywhere.
+#
+# The tag is signed with the CI release key, which is listed in resources/release-signers beside the maintainers' own
+# keys, so panels accept it. The key is a secret of each repository's "release" environment, which only main may use
+# and which waits for a maintainer to approve every run, so nothing is signed without that approval. The job reads the
+# key from the calling repository's environment itself, since environment secrets cannot be passed to it.
+
+name: Sign and release
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version to release, such as v1.2.0.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  checks: read
+  statuses: read
+
+jobs:
+  release:
+    name: Release ${{ inputs.version }}
+    runs-on: ubuntu-24.04
+    environment: release
+
+    steps:
+      - name: Only release main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Releases are only made from main, not ${GITHUB_REF}." >&2
+          exit 1
+
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: true
+
+      - name: Check the version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "$VERSION is not a version such as v1.2.0." >&2
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
+            echo "$VERSION has already been released." >&2
+            exit 1
+          fi
+
+          latest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1 || true)
+
+          if [ -n "$latest" ] && [ "$(printf '%s\n%s\n' "$latest" "$VERSION" | sort -V | tail -n 1)" != "$VERSION" ]; then
+            echo "$VERSION is not newer than $latest, the latest release. Panels never move to an older version." >&2
+            exit 1
+          fi
+
+          echo "Releasing $VERSION after ${latest:-no earlier release} at $(git rev-parse --short HEAD)."
+
+      - name: Check that main passed its checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # Release runs are left out, since this one is still going.
+          failed=$(gh api "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs" --paginate \
+            --jq '.check_runs[] | select(.app.slug == "github-actions") | select(.name | test("release"; "i") | not) | select(.status != "completed" or (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")) | "\(.name): \(.status) \(.conclusion // "")"')
+
+          if [ -n "$failed" ]; then
+            echo "main has checks that did not pass, so it is not released:" >&2
+            echo "$failed" >&2
+            exit 1
+          fi
+
+      - name: Sign the tag
+        env:
+          VERSION: ${{ inputs.version }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+
+          key="$RUNNER_TEMP/release-signing-key"
+          install -m 600 /dev/null "$key"
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key"
+          ssh-keygen -y -f "$key" > "$key.pub"
+
+          git config user.name 'Swage releases'
+          git config user.email 'releases@swagedeploy.app'
+          git config gpg.format ssh
+          git config user.signingkey "$key"
+
+          git tag -s "$VERSION" -m "$VERSION"
+
+          shred -u "$key" 2> /dev/null || rm -f "$key"
+
+      # Checked against swage-core's release signers on main, the keys panels will trust from their next update, so a
+      # tag panels would refuse is never published.
+      - name: Check the signature the way panels will
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -f resources/release-signers ] && [ "$GITHUB_REPOSITORY" = 'Swage-Deploy/swage-core' ]; then
+            cp resources/release-signers "$RUNNER_TEMP/release-signers"
+          else
+            curl -fsSL https://raw.githubusercontent.com/Swage-Deploy/swage-core/main/resources/release-signers -o "$RUNNER_TEMP/release-signers"
+          fi
+
+          git -c gpg.ssh.allowedSignersFile="$RUNNER_TEMP/release-signers" verify-tag "$VERSION"
+
+      - name: Push the tag
+        env:
+          VERSION: ${{ inputs.version }}
+        run: git push origin "refs/tags/$VERSION"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh release create "$VERSION" --verify-tag --title "$VERSION" --generate-notes
