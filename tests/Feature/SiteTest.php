@@ -77,37 +77,23 @@ test('the scheduler can be left off for a new site', function () {
     Bus::assertChained([CreateDatabase::class, SyncDatabaseUser::class, InstallSite::class]);
 });
 
-test('isolation and the database can both be turned off', function () {
+test('the database and scheduler can be turned off, but not isolation', function () {
     Bus::fake();
     $server = Server::factory()->create();
 
     Livewire::actingAs($server->user)->test('pages::servers.sites', ['server' => $server])
+        ->assertDontSee('Isolate site')
         ->set('domain', 'example.com')
-        ->set('isolated', false)
         ->set('create_database', false)
         ->set('scheduler', false)
         ->call('create')
         ->assertHasNoErrors();
 
-    expect($server->sites()->sole()->system_user)->toBeNull()
+    expect($server->sites()->sole()->system_user)->toBe('example')
         ->and($server->databases()->exists())->toBeFalse()
         ->and($server->databaseUsers()->exists())->toBeFalse();
 
     Bus::assertChained([InstallSite::class]);
-});
-
-test('a shared site\'s database user is named after its database', function () {
-    Bus::fake();
-    $server = Server::factory()->create();
-
-    Livewire::actingAs($server->user)->test('pages::servers.sites', ['server' => $server])
-        ->set('domain', 'example.com')
-        ->set('isolated', false)
-        ->set('database', 'shop')
-        ->call('create')
-        ->assertHasNoErrors();
-
-    expect($server->databaseUsers()->sole()->username)->toBe('shop');
 });
 
 test('suggested names never overwrite names the user typed', function () {

@@ -240,3 +240,15 @@ test('managers can still install a repository from a clone url', function () {
     expect($site->fresh()->repository)->toBe('git@git.example.com:acme/app.git');
     Queue::assertPushed(InstallRepository::class);
 });
+
+test('sites sharing swage\'s user warn that their members reach every other shared site', function () {
+    $shared = Site::factory()->create(['system_user' => null]);
+    $isolated = Site::factory()->for($shared->server)->isolated('example')->create();
+
+    Livewire::actingAs($shared->server->user)->test('pages::sites.members', ['server' => $shared->server, 'site' => $shared])
+        ->assertSee('This site shares a Linux user with other sites');
+    Livewire::actingAs($shared->server->user)->test('pages::sites.settings', ['server' => $shared->server, 'site' => $shared])
+        ->assertSee('This site shares a Linux user with other sites');
+    Livewire::actingAs($isolated->server->user)->test('pages::sites.members', ['server' => $isolated->server, 'site' => $isolated])
+        ->assertDontSee('This site shares a Linux user with other sites');
+});

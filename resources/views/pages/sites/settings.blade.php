@@ -115,6 +115,8 @@ new class extends Component {
 <div @if ($site->status->isBusy()) wire:poll.3s @endif>
     <x-pages::sites.layout :site="$site">
         <div class="flex flex-col gap-6">
+            <x-shared-site-warning :site="$site" />
+
             <x-panel icon="adjustments-horizontal" :heading="__('Site settings')">
             <form wire:submit="save" class="flex flex-col gap-6">
                 <flux:input wire:model="aliases" :label="__('Aliases')" :description="__('Separate extra domains with commas or spaces.')" />

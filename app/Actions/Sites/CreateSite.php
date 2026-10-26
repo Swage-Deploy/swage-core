@@ -27,6 +27,9 @@ class CreateSite
     /**
      * Validate a site's details as the user entered them, then create it.
      *
+     * Every new site is isolated: it runs as a Linux user of its own, named after its domain unless one is given. Sites
+     * sharing Swage's user can reach each other's files, so they are no longer created.
+     *
      * @param  array<string, mixed>  $input
      *
      * @throws ValidationException
@@ -34,7 +37,11 @@ class CreateSite
     public function fromInput(Server $server, array $input): Site
     {
         $input['domain'] = strtolower(trim((string) ($input['domain'] ?? '')));
-        $isolated = filter_var($input['isolated'] ?? false, FILTER_VALIDATE_BOOL);
+
+        if (blank($input['system_user'] ?? null) && $input['domain'] !== '') {
+            $input['system_user'] = SiteSystemUser::suggest($input['domain'], $server);
+        }
+
         $engine = (string) ($input['database_engine'] ?? '');
 
         $validated = Validator::make($input, [
@@ -42,11 +49,9 @@ class CreateSite
             'aliases' => ['nullable', 'string', 'max:1000'],
             'web_directory' => ['required', 'string', 'max:100', 'regex:/^\/[A-Za-z0-9._\/-]*$/D', 'not_regex:/\.\./'],
             'php_version' => ['required', Rule::in($server->php_versions->map->value)],
-            'isolated' => ['boolean'],
-            'system_user' => ['exclude_unless:isolated,true', 'required', ...SiteSystemUser::rules($server)],
+            'system_user' => ['required', ...SiteSystemUser::rules($server)],
             'create_database' => ['boolean'],
-            // Without isolation the database name doubles as its user's name, which MySQL caps at 32 characters.
-            'database' => ['exclude_unless:create_database,true', 'required', 'string', 'max:'.($isolated ? 64 : 32), 'regex:/^[A-Za-z0-9_]+$/D', Database::notSystemDatabaseRule(),
+            'database' => ['exclude_unless:create_database,true', 'required', 'string', 'max:64', 'regex:/^[A-Za-z0-9_]+$/D', Database::notSystemDatabaseRule(),
                 Rule::unique('databases', 'name')->where('server_id', $server->id)->where('engine', $engine)],
             'database_engine' => ['exclude_unless:create_database,true', 'required', Rule::in(array_column($server->databaseEngines(), 'value'))],
             'zero_downtime' => ['boolean'],
@@ -66,12 +71,12 @@ class CreateSite
 
         $createDatabase = filter_var($input['create_database'] ?? false, FILTER_VALIDATE_BOOL);
 
-        $systemUser = $isolated ? $validated['system_user'] : null;
+        $systemUser = $validated['system_user'];
         $database = $createDatabase && $server->hasDatabase() ? $validated['database'] : null;
         $databaseEngine = $database !== null ? DatabaseEngine::from($validated['database_engine']) : null;
 
-        if ($database !== null && ! $this->databaseUsernameIsAvailable($server, $systemUser ?? $database, $databaseEngine)) {
-            throw ValidationException::withMessages([$isolated ? 'system_user' : 'database' => __('A database user with this name already exists on the server.')]);
+        if ($database !== null && ! $this->databaseUsernameIsAvailable($server, $systemUser, $databaseEngine)) {
+            throw ValidationException::withMessages(['system_user' => __('A database user with this name already exists on the server.')]);
         }
 
         return $this->handle($server, [

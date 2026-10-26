@@ -51,12 +51,11 @@ class SiteController extends Controller
         $site = $createSite->fromInput($server, [
             'web_directory' => '/public',
             'php_version' => $server->default_php_version?->value,
-            'isolated' => false,
             'create_database' => false,
             'database_engine' => $server->defaultDatabaseEngine()?->value,
             'zero_downtime' => true,
             'scheduler' => true,
-            ...$request->only(['domain', 'web_directory', 'php_version', 'isolated', 'system_user', 'create_database', 'database', 'database_engine', 'zero_downtime', 'scheduler']),
+            ...$request->only(['domain', 'web_directory', 'php_version', 'system_user', 'create_database', 'database', 'database_engine', 'zero_downtime', 'scheduler']),
             'aliases' => $this->aliasesInput($request->input('aliases')),
         ]);
 

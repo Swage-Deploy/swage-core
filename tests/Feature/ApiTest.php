@@ -204,7 +204,6 @@ test('a site can be created through the API', function () {
     $this->postJson("/api/v1/servers/{$server->id}/sites", [
         'domain' => 'Example.com',
         'aliases' => ['www.example.com'],
-        'isolated' => true,
         'system_user' => 'example',
         'create_database' => true,
         'database' => 'example',
@@ -217,6 +216,17 @@ test('a site can be created through the API', function () {
         ->and($server->databases()->sole()->name)->toBe('example');
 
     Bus::assertChained([CreateDatabase::class, SyncDatabaseUser::class, InstallSite::class, InstallScheduledJob::class]);
+});
+
+test('sites created through the API are always isolated, named after their domain unless a user is given', function () {
+    Bus::fake();
+    $server = Server::factory()->create();
+    withApiKey($server->user);
+
+    $this->postJson("/api/v1/servers/{$server->id}/sites", ['domain' => 'shop.example.com', 'isolated' => false])
+        ->assertCreated()
+        ->assertJsonPath('data.isolated', true)
+        ->assertJsonPath('data.system_user', 'shop_example');
 });
 
 test('creating a site through the API is validated like the form', function () {

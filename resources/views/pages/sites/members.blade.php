@@ -30,6 +30,8 @@ new class extends Component {
 
 <div>
     <x-pages::sites.layout :site="$site">
+        <x-shared-site-warning :site="$site" class="mb-6" />
+
         @include('partials.members', [
             'owner' => $server->user,
             'inherited' => $server->members()->orderBy('name')->get(),

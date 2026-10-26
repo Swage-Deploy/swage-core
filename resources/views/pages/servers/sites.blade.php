@@ -21,8 +21,6 @@ new class extends Component {
 
     public string $php_version = '';
 
-    public bool $isolated = true;
-
     public string $system_user = '';
 
     public bool $create_database = true;
@@ -89,10 +87,10 @@ new class extends Component {
         $this->authorize('update', $this->server);
 
         $createSite->fromInput($this->server, $this->only([
-            'domain', 'aliases', 'web_directory', 'php_version', 'isolated', 'system_user', 'create_database', 'database', 'database_engine', 'zero_downtime', 'scheduler',
+            'domain', 'aliases', 'web_directory', 'php_version', 'system_user', 'create_database', 'database', 'database_engine', 'zero_downtime', 'scheduler',
         ]));
 
-        $this->reset('domain', 'aliases', 'isolated', 'system_user', 'create_database', 'database', 'zero_downtime', 'scheduler', 'suggested_name');
+        $this->reset('domain', 'aliases', 'system_user', 'create_database', 'database', 'zero_downtime', 'scheduler', 'suggested_name');
         $this->database_engine = $this->server->defaultDatabaseEngine()->value ?? '';
         Flux::modal('create-site')->close();
         Flux::toast(variant: 'success', text: __('Installing site.'));
@@ -186,19 +184,11 @@ new class extends Component {
 
                 <flux:checkbox wire:model="zero_downtime" :label="__('Zero downtime deployments')" :description="__('Each deploy builds a new release and switches traffic to it atomically. This cannot be changed later, and Octane is not available for zero downtime sites.')" />
 
-                <div class="flex flex-col gap-4 rounded-lg border border-zinc-200 p-4 dark:border-white/10">
-                    <flux:switch wire:model.live="isolated" :label="__('Isolate site')" :description="__('Runs as its own Linux user with its own PHP-FPM pool, so it cannot read other sites\' files. This cannot be changed later.')" align="left" />
-
-                    @if ($isolated)
-                        <flux:input wire:model="system_user" :label="__('System user')" placeholder="example" class="font-mono" required />
-                    @endif
-                </div>
+                <flux:input wire:model="system_user" :label="__('System user')" :description="__('The site runs as this Linux user, with its own PHP-FPM pool and Redis, so it cannot reach other sites\' files.')" placeholder="example" class="font-mono" required />
 
                 @if ($server->hasDatabase())
                     <div class="flex flex-col gap-4 rounded-lg border border-zinc-200 p-4 dark:border-white/10">
-                        <flux:switch wire:model.live="create_database" :label="__('Create database')" :description="$isolated
-                            ? __('Creates a database and a user of the same name as the system user that can only access it, and writes the credentials into the site\'s .env.')
-                            : __('Creates a database and a user of the same name that can only access it, and writes the credentials into the site\'s .env.')" align="left" />
+                        <flux:switch wire:model.live="create_database" :label="__('Create database')" :description="__('Creates a database and a user of the same name as the system user that can only access it, and writes the credentials into the site\'s .env.')" align="left" />
 
                         @if ($create_database)
                             @if (count($server->databaseEngines()) > 1)
