@@ -466,3 +466,27 @@ test('databases and their users can be created, without passwords coming back', 
     $this->postJson("/api/v1/servers/{$server->id}/databases", ['name' => 'mysql'])->assertUnprocessable()->assertJsonValidationErrors('name');
     $this->postJson("/api/v1/servers/{$server->id}/databases", ['name' => 'other', 'engine' => DatabaseEngine::Postgres->value])->assertUnprocessable()->assertJsonValidationErrors('engine');
 });
+
+test('only a key given the root ability can make daemons and scheduled jobs run as root', function () {
+    Queue::fake();
+    $server = Server::factory()->create();
+    withApiKey($server->user, ['daemons:read', 'daemons:write']);
+
+    $this->postJson("/api/v1/servers/{$server->id}/daemons", ['command' => 'php worker.php', 'user' => 'root'])
+        ->assertForbidden()
+        ->assertJsonPath('message', 'This API key cannot run commands as root. Create a key with "Run commands as root" for that.');
+    $this->postJson("/api/v1/servers/{$server->id}/scheduled-jobs", ['command' => 'php backup.php', 'user' => 'root'])->assertForbidden();
+    $this->postJson("/api/v1/servers/{$server->id}/daemons", ['command' => 'php worker.php', 'user' => 'swage'])->assertCreated();
+
+    expect($server->daemons()->where('user', 'root')->exists())->toBeFalse()
+        ->and($server->scheduledJobs()->count())->toBe(0);
+
+    withApiKey($server->user, ['daemons:read', 'daemons:write', 'root']);
+
+    $this->postJson("/api/v1/servers/{$server->id}/daemons", ['command' => 'php worker.php', 'user' => 'root'])->assertCreated();
+    $this->postJson("/api/v1/servers/{$server->id}/scheduled-jobs", ['command' => 'php backup.php', 'user' => 'root'])->assertCreated();
+});
+
+test('full access does not include running commands as root', function () {
+    expect(ApiAbility::all())->not->toContain('root')->toContain('daemons:write');
+});

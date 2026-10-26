@@ -100,3 +100,27 @@ test('removing a user removes their keys', function () {
 
     expect(PersonalAccessToken::count())->toBe(0);
 });
+
+test('a key is given the root ability only when asked, and only with write access to daemons', function () {
+    $user = User::factory()->create();
+
+    Livewire::actingAs($user)->test('pages::settings.api-keys')
+        ->set('name', 'Root only')
+        ->set('access.servers', 'read')
+        ->set('root', true)
+        ->call('create')
+        ->assertHasErrors(['root' => 'Running commands as root needs write access to daemons.']);
+
+    expect($user->tokens()->count())->toBe(0);
+
+    Livewire::actingAs($user)->test('pages::settings.api-keys')
+        ->set('name', 'Provisioner')
+        ->call('fullAccess')
+        ->set('root', true)
+        ->call('create')
+        ->assertHasNoErrors()
+        ->assertSee('Full access')
+        ->assertSee('Run commands as root');
+
+    expect($user->tokens()->sole()->abilities)->toEqualCanonicalizing([...ApiAbility::all(), 'root']);
+});

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Servers\CreateDaemon;
+use App\Enums\ApiAbility;
 use App\Enums\ResourceStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\DaemonResource;
@@ -29,6 +30,9 @@ class DaemonController extends Controller
     public function store(Request $request, Server $server, CreateDaemon $createDaemon): JsonResponse
     {
         Gate::authorize('update', $server);
+
+        // Only a key given the root ability can make something run as root, which controls the whole server.
+        abort_if($request->input('user') === 'root' && ! $request->user()->tokenCan(ApiAbility::Root->value), Response::HTTP_FORBIDDEN, __('This API key cannot run commands as root. Create a key with "Run commands as root" for that.'));
 
         $daemon = $createDaemon->handle($server, [
             'user' => config('swage.user'),

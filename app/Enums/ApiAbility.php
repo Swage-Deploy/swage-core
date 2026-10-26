@@ -5,6 +5,9 @@ namespace App\Enums;
 /**
  * What an API key may do. Each area has a read ability and a write ability, and a key given write is given read too.
  *
+ * Running commands as root is an ability of its own, given separately from every area, because a daemon or scheduled
+ * job running as root controls the whole server.
+ *
  * A key never does more than the user it belongs to: the server and site policies still decide what it can reach.
  */
 enum ApiAbility: string
@@ -25,6 +28,7 @@ enum ApiAbility: string
     case DaemonsWrite = 'daemons:write';
     case DatabasesRead = 'databases:read';
     case DatabasesWrite = 'databases:write';
+    case Root = 'root';
 
     /**
      * The areas a key can be given access to, each with what reading and writing it allows.
@@ -66,12 +70,12 @@ enum ApiAbility: string
     }
 
     /**
-     * The abilities a key gets with full access.
+     * The abilities a key gets with full access to every area, which does not include running commands as root.
      *
      * @return list<string>
      */
     public static function all(): array
     {
-        return array_column(self::cases(), 'value');
+        return array_values(array_diff(array_column(self::cases(), 'value'), [self::Root->value]));
     }
 }

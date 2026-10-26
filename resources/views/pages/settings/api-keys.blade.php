@@ -34,6 +34,11 @@ new #[Title('API keys')] class extends Component {
     public array $access = [];
 
     /**
+     * Whether the new key may create daemons and scheduled jobs that run as root.
+     */
+    public bool $root = false;
+
+    /**
      * A key just created, shown once and then forgotten.
      */
     #[Locked]
@@ -55,7 +60,7 @@ new #[Title('API keys')] class extends Component {
 
     public function add(): void
     {
-        $this->reset('name', 'expires');
+        $this->reset('name', 'expires', 'root');
         $this->resetAccess();
         $this->resetValidation();
 
@@ -82,6 +87,7 @@ new #[Title('API keys')] class extends Component {
             'expires' => ['required', Rule::in([...array_map('strval', self::EXPIRY_DAYS), 'never'])],
             'access' => ['required', 'array'],
             'access.*' => ['required', Rule::in(['none', 'read', 'write'])],
+            'root' => ['boolean'],
         ]);
 
         $abilities = collect($validated['access'])
@@ -95,6 +101,16 @@ new #[Title('API keys')] class extends Component {
             $this->addError('access', __('Give the key access to at least one area.'));
 
             return;
+        }
+
+        if ($validated['root'] && ($validated['access']['daemons'] ?? 'none') !== 'write') {
+            $this->addError('root', __('Running commands as root needs write access to daemons.'));
+
+            return;
+        }
+
+        if ($validated['root']) {
+            $abilities[] = ApiAbility::Root->value;
         }
 
         $token = Auth::user()->createToken(
@@ -136,8 +152,10 @@ new #[Title('API keys')] class extends Component {
      */
     public function describe(PersonalAccessToken $key): array
     {
+        $root = in_array(ApiAbility::Root->value, $key->abilities ?? [], true) ? [__('Run commands as root')] : [];
+
         if (empty(array_diff(ApiAbility::all(), $key->abilities ?? []))) {
-            return [__('Full access')];
+            return [__('Full access'), ...$root];
         }
 
         return collect(ApiAbility::areas())
@@ -148,6 +166,7 @@ new #[Title('API keys')] class extends Component {
             })
             ->filter()
             ->values()
+            ->merge($root)
             ->all();
     }
 
@@ -244,6 +263,13 @@ new #[Title('API keys')] class extends Component {
 
                 <flux:error name="access" />
             </flux:fieldset>
+
+            <flux:field variant="inline">
+                <flux:checkbox wire:model="root" />
+                <flux:label>{{ __('Run commands as root') }}</flux:label>
+                <flux:description>{{ __('Lets the key create daemons and scheduled jobs that run as root, which controls the whole server. Full access does not include it. Needs write access to daemons.') }}</flux:description>
+                <flux:error name="root" />
+            </flux:field>
 
             <div class="flex justify-end gap-2">
                 <flux:modal.close>
