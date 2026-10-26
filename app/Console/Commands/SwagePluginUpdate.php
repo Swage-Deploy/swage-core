@@ -105,7 +105,7 @@ class SwagePluginUpdate extends Command
         }
 
         foreach ($updates as [$previous, $plugin]) {
-            $this->report("{$plugin->name}: {$previous->ref} ({$previous->shortCommit()}) → {$plugin->ref} ({$plugin->shortCommit()})");
+            $this->report("{$plugin->name}: {$previous->ref} → {$plugin->ref}");
         }
 
         if (! $this->option('force') && ! $this->confirm('Update these plugins and rebuild Swage with them?')) {

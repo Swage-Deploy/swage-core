@@ -506,7 +506,7 @@ new #[Title('Plugins')] class extends Component {
                                 @endunless
                             </flux:table.cell>
                             <flux:table.cell class="font-mono text-xs">
-                                {{ $plugin->ref }} · {{ $plugin->shortCommit() }}
+                                {{ $plugin->ref }}
                                 @if (is_array($update))
                                     <flux:badge size="sm" color="orange" class="ms-2">{{ $update['ref'] === $plugin->ref ? __('new commits') : __(':version available', ['version' => $update['ref']]) }}</flux:badge>
                                 @elseif ($update === false)
@@ -521,7 +521,7 @@ new #[Title('Plugins')] class extends Component {
                                 <div class="flex justify-end gap-1">
                                     @if (is_array($update))
                                         <flux:button size="sm" variant="primary" icon="arrow-up-circle" wire:click="updatePlugin('{{ $plugin->name }}')"
-                                            wire:confirm="{{ __('Update :plugin to :ref (:commit) and rebuild Swage?', ['plugin' => $plugin->name, 'ref' => $update['ref'], 'commit' => substr($update['commit'], 0, 12)]) }}">{{ __('Update') }}</flux:button>
+                                            wire:confirm="{{ __('Update :plugin to :ref and rebuild Swage?', ['plugin' => $plugin->name, 'ref' => $update['ref']]) }}">{{ __('Update') }}</flux:button>
                                     @endif
                                     <flux:button size="sm" variant="ghost" icon="trash" wire:click="removePlugin('{{ $plugin->name }}')"
                                         wire:confirm.danger="{{ $plugin->kind === PluginKind::SourceControl

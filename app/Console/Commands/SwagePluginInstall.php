@@ -82,11 +82,11 @@ class SwagePluginInstall extends Command
 
         $this->selfUpdate?->update(['plugin_operation' => [...$this->selfUpdate->plugin_operation, 'name' => $plugin->name, 'ref' => $plugin->ref]]);
         $this->report("Plugin: {$plugin->name}");
-        $this->report("Version: {$plugin->ref} at {$plugin->commit}");
+        $this->report("Version: {$plugin->ref}");
         $this->report('Source: '.($plugin->official ? 'the plugin index' : "{$plugin->repository}, not reviewed or signed by Swage"));
 
         if ($previous) {
-            $this->report("Replaces: {$previous->ref} at {$previous->commit}");
+            $this->report("Replaces: {$previous->ref}");
         }
 
         if (! $this->option('force') && ! $this->confirm('Install this plugin and rebuild Swage with it?')) {

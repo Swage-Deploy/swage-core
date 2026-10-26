@@ -320,7 +320,7 @@ class SelfUpdater
         $this->step($update, 'Restarting queue workers', [$php, 'artisan', 'queue:restart'], $release, $onOutput);
         $this->pruneReleases($release);
 
-        return $this->finish($update, DeploymentStatus::Finished, "\nSwage is now running ".($update->to_version ? "{$update->to_version} ({$update->to_commit})" : $update->to_commit).".\n", $onOutput);
+        return $this->finish($update, DeploymentStatus::Finished, "\nSwage is now running ".($update->to_version ?? $update->to_commit).".\n", $onOutput);
     }
 
     /**

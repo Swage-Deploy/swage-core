@@ -34,10 +34,9 @@ class SwagePluginList extends Command
         if ($plugins === []) {
             $this->components->info('No plugins are installed.');
         } else {
-            $this->table(['Plugin', 'Version', 'Commit', 'Repository'], array_map(fn (Plugin $plugin): array => [
+            $this->table(['Plugin', 'Version', 'Repository'], array_map(fn (Plugin $plugin): array => [
                 $plugin->name,
                 $plugin->ref,
-                $plugin->shortCommit(),
                 $plugin->repository,
             ], $plugins));
         }

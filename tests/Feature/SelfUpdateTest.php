@@ -390,7 +390,7 @@ test('swage updates to its newest version tag rather than the newest commit on t
         ->status->toBe(DeploymentStatus::Finished)
         ->to_commit->toBe(TAGGED_COMMIT)
         ->to_version->toBe('v1.2.0')
-        ->output->toContain('Swage is now running v1.2.0 ('.TAGGED_COMMIT.')');
+        ->output->toContain('Swage is now running v1.2.0.');
 
     Process::assertRan(fn (PendingProcess $process) => array_slice($process->command, 0, 8) === ['git', '-c', 'advice.detachedHead=false', 'clone', '--depth', '1', '--branch', 'v1.2.0']);
 });

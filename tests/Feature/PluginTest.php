@@ -260,7 +260,7 @@ test('installing a plugin rebuilds swage with it', function () {
 
     expect(app(PluginManifest::class)->find('acme/swage-gitea')->commit)->toBe(PLUGIN_COMMIT)
         ->and(SelfUpdate::sole()->status)->toBe(DeploymentStatus::Finished)
-        ->and(SelfUpdate::sole()->output)->toContain('Adding the acme/swage-gitea plugin at cccccccccccc', 'Installing plugins');
+        ->and(SelfUpdate::sole()->output)->toContain('Adding the acme/swage-gitea plugin at v1.2.0', 'Installing plugins');
 
     Process::assertRan(fn (PendingProcess $process) => array_slice($process->command, 0, 2) === ['composer', 'require'] && in_array('acme/swage-gitea:*@dev', $process->command, true));
 });
@@ -335,7 +335,8 @@ test('installed plugins and providers are listed', function () {
     $this->actingAs(pluginAdmin())->withSession(['auth.password_confirmed_at' => time()])->get(route('plugins'))
         ->assertOk()
         ->assertSee('acme/swage-gitea')
-        ->assertSee('v1.2.0 · cccccccccccc')
+        ->assertSee('v1.2.0')
+        ->assertDontSee('cccccccccccc')
         ->assertSee('Source control');
 });
 
@@ -390,7 +391,7 @@ test('an install started from the dashboard reports its progress to the dashboar
     expect($operation->status)->toBe(DeploymentStatus::Finished)
         ->and($operation->plugin_operation['name'])->toBe('acme/swage-gitea')
         ->and($operation->title())->toBe('Install acme/swage-gitea at v1.2.0')
-        ->and($operation->output)->toContain('==> Fetching acme/swage-gitea from https://github.com/acme/swage-gitea.git', 'Version: v1.2.0 at '.PLUGIN_COMMIT, 'Installing plugins')
+        ->and($operation->output)->toContain('==> Fetching acme/swage-gitea from https://github.com/acme/swage-gitea.git', 'Version: v1.2.0', 'Installing plugins')
         ->and(SelfUpdate::count())->toBe(1);
 });
 

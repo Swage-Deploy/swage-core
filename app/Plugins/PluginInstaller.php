@@ -110,7 +110,7 @@ class PluginInstaller
             $this->verify($plugin);
 
             $steps[] = [
-                'label' => "Adding the {$plugin->name} plugin at {$plugin->shortCommit()}",
+                'label' => "Adding the {$plugin->name} plugin at {$plugin->ref}",
                 'command' => ['composer', 'config', 'repositories.swage-plugin-'.Str::slug(str_replace('/', '-', $plugin->name)), json_encode([
                     'type' => 'path',
                     'url' => $this->packagePath($plugin),
