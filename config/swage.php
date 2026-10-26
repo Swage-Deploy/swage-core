@@ -103,17 +103,31 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Release Signers
+    |--------------------------------------------------------------------------
+    |
+    | The keys Swage's own version tags and official plugins' version tags must
+    | be signed with, as an SSH allowed signers file. It ships with each
+    | release, so the keys only change through a release they signed.
+    |
+    */
+
+    'release_signers' => base_path('resources/release-signers'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Plugins
     |--------------------------------------------------------------------------
     |
-    | Plugins are installed from the plugin index. The list of installed plugins
+    | Official plugins are installed from the plugin index, and others straight
+    | from a git repository by an administrator. The list of installed plugins
     | and their checkouts live in storage, which every release shares, so each
     | update builds the same plugins into the new release.
     |
     */
 
     'plugins' => [
-        // The list of plugins that can be installed. Only plugins listed here can be installed or updated.
+        // The official plugins. They are installed and updated only from version tags signed with a release key.
         'index' => env('SWAGE_PLUGIN_INDEX', 'https://raw.githubusercontent.com/Swage-Deploy/plugin-repo/main/plugins.json'),
         'manifest' => env('SWAGE_PLUGIN_MANIFEST', storage_path('app/plugins.json')),
         'directory' => env('SWAGE_PLUGIN_DIRECTORY', storage_path('app/plugins')),

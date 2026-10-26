@@ -75,7 +75,7 @@ class PluginIndex
         $kind = PluginKind::tryFrom((string) ($entry['kind'] ?? ''));
 
         if (! is_string($name) || ! preg_match('/^[a-z0-9]([_.-]?[a-z0-9]+)*\/[a-z0-9](([_.]?|-{0,2})[a-z0-9]+)*$/D', $name)
-            || ! is_string($repository) || ! preg_match('/^(https:\/\/|git@|ssh:\/\/)\S+$/D', $repository)
+            || ! is_string($repository) || ! preg_match(PluginInstaller::REPOSITORY_PATTERN, $repository)
             || $kind === null) {
             return null;
         }

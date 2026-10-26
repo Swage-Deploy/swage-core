@@ -1,0 +1,6 @@
+# Keys that sign Swage's version tags and the official plugins' version tags, in ssh-keygen's allowed signers format:
+#
+#   releases@swagedeploy.app namespaces="git" ssh-ed25519 AAAA...
+#
+# Once a key is listed, Swage only updates itself, and installs and updates official plugins, from tags signed with
+# one of these keys. With none listed, tags are not checked.

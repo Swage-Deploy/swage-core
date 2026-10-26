@@ -46,9 +46,10 @@ class SelfUpdate extends Model
         $operation = $this->plugin_operation;
 
         return match ($operation['action'] ?? null) {
+            // An install from a repository is named after the repository until the plugin's name is known.
             'install' => isset($operation['ref'])
-                ? __('Install :plugin at :ref', ['plugin' => $operation['name'], 'ref' => $operation['ref']])
-                : __('Install :plugin', ['plugin' => $operation['name']]),
+                ? __('Install :plugin at :ref', ['plugin' => $operation['name'] ?? $operation['url'], 'ref' => $operation['ref']])
+                : __('Install :plugin', ['plugin' => $operation['name'] ?? $operation['url']]),
             'update' => __('Update :plugins', ['plugins' => implode(', ', $operation['names'])]),
             'remove' => __('Remove :plugin', ['plugin' => $operation['name']]),
             default => __('Update'),

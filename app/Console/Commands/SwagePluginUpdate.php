@@ -51,20 +51,23 @@ class SwagePluginUpdate extends Command
             return $this->stop('No installed plugin is named '.implode(', ', array_diff($names, array_map(fn (Plugin $plugin) => $plugin->name, $plugins))).'.');
         }
 
-        try {
-            $listed = $index->all();
-        } catch (RuntimeException $exception) {
-            return $this->stop($exception->getMessage());
-        }
-
+        $listed = null;
         $updates = [];
 
         foreach ($plugins as $plugin) {
-            // Updates only come from the repository the index lists for the plugin.
-            if (($listed[$plugin->name] ?? null)?->repository !== $plugin->repository) {
-                $this->report("{$plugin->name} is no longer in the plugin index from {$plugin->repository}, so it is not updated.");
+            // Official plugins are only updated from the repository the index lists for them. Others follow their own.
+            if ($plugin->official) {
+                try {
+                    $listed ??= $index->all();
+                } catch (RuntimeException $exception) {
+                    return $this->stop($exception->getMessage());
+                }
 
-                continue;
+                if (($listed[$plugin->name] ?? null)?->repository !== $plugin->repository) {
+                    $this->report("{$plugin->name} is no longer in the plugin index from {$plugin->repository}, so it is not updated.");
+
+                    continue;
+                }
             }
 
             try {
@@ -77,12 +80,20 @@ class SwagePluginUpdate extends Command
                 }
 
                 $this->report("==> Fetching {$plugin->name} {$available['ref']}");
-                $updates[] = [$plugin, $installer->fetch($plugin->repository, $available['ref'])];
+                $fetched = $installer->fetch($plugin->repository, $available['ref'], official: $plugin->official);
             } catch (RuntimeException $exception) {
                 $installer->pruneCheckouts();
 
                 return $this->stop($exception->getMessage());
             }
+
+            if ($fetched->name !== $plugin->name || $fetched->kind !== $plugin->kind) {
+                $installer->pruneCheckouts();
+
+                return $this->stop("{$plugin->repository} now holds {$fetched->name} ({$fetched->kind->value}) instead of {$plugin->name} ({$plugin->kind->value}), so it was not updated.");
+            }
+
+            $updates[] = [$plugin, $fetched];
         }
 
         if ($updates === []) {

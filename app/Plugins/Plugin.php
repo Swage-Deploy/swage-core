@@ -5,6 +5,9 @@ namespace App\Plugins;
 /**
  * A plugin installed from a git repository. It follows a version tag or a branch, and stays at the commit that pointed
  * to when it was installed or last updated.
+ *
+ * Official plugins come from the plugin index, from the repository it lists, and only from signed version tags once
+ * Swage has release keys. Others are installed straight from a repository by an administrator and are not checked.
  */
 final readonly class Plugin
 {
@@ -17,6 +20,7 @@ final readonly class Plugin
      * @param  string  $ref  The version tag or branch the plugin is at.
      * @param  string  $commit  The full commit the ref pointed to when it was installed.
      * @param  string  $checkout  The checkout's directory name within the plugins directory.
+     * @param  bool  $official  Whether the plugin was installed from the plugin index.
      */
     public function __construct(
         public string $name,
@@ -26,10 +30,13 @@ final readonly class Plugin
         public string $commit,
         public string $checkout,
         public string $installedAt,
+        public bool $official = true,
     ) {}
 
     /**
-     * @param  array<string, string>  $attributes
+     * Plugins recorded before unofficial plugins existed were all installed from the plugin index.
+     *
+     * @param  array<string, string|bool>  $attributes
      */
     public static function fromArray(array $attributes): self
     {
@@ -41,11 +48,12 @@ final readonly class Plugin
             commit: $attributes['commit'],
             checkout: $attributes['checkout'],
             installedAt: $attributes['installed_at'],
+            official: (bool) ($attributes['official'] ?? true),
         );
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, string|bool>
      */
     public function toArray(): array
     {
@@ -57,6 +65,7 @@ final readonly class Plugin
             'commit' => $this->commit,
             'checkout' => $this->checkout,
             'installed_at' => $this->installedAt,
+            'official' => $this->official,
         ];
     }
 

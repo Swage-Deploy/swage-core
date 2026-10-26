@@ -46,6 +46,21 @@ new #[Title('Plugins')] class extends Component {
 
     public ?int $viewingOperationId = null;
 
+    /**
+     * The git repository of an unofficial plugin to install, and the tag or branch to install instead of its newest.
+     */
+    public string $repositoryUrl = '';
+
+    public string $repositoryRef = '';
+
+    /**
+     * What the repository was found to hold when it was checked, which the install is held to.
+     *
+     * @var array{url: string, ref: string, commit: string}|null
+     */
+    #[Locked]
+    public ?array $repositoryCheck = null;
+
     public function mount(?string $category = null): void
     {
         $this->authorize('administer');
@@ -203,8 +218,8 @@ new #[Title('Plugins')] class extends Component {
         }
 
         foreach (app(PluginManifest::class)->all() as $plugin) {
-            // Only plugins still listed, from the same repository, are offered updates.
-            if (! $this->isListed($plugin)) {
+            // Official plugins are only offered updates while the index still lists them, from the same repository.
+            if ($plugin->official && ! $this->isListed($plugin)) {
                 unset($this->updates[$plugin->name]);
 
                 continue;
@@ -254,6 +269,59 @@ new #[Title('Plugins')] class extends Component {
         $this->launch(['action' => 'update', 'names' => $names]);
     }
 
+    /**
+     * Find the version an unofficial plugin would be installed at, so it can be confirmed before anything is fetched.
+     */
+    public function checkUnofficialPlugin(PluginInstaller $installer): void
+    {
+        $this->authorize('administer');
+
+        $this->repositoryCheck = null;
+
+        $validated = $this->validate([
+            'repositoryUrl' => ['required', 'string', 'max:255', 'regex:'.PluginInstaller::REPOSITORY_PATTERN],
+            'repositoryRef' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9._\/-]+$/D', 'not_regex:/^-|\.\./'],
+        ], [
+            'repositoryUrl.regex' => __('Enter a git URL, such as https://github.com/acme/swage-gitea or git@github.com:acme/swage-gitea.git.'),
+        ]);
+
+        try {
+            $version = $installer->resolve($validated['repositoryUrl'], filled($validated['repositoryRef']) ? $validated['repositoryRef'] : null);
+        } catch (RuntimeException $exception) {
+            $this->addError('repositoryUrl', $exception->getMessage());
+
+            return;
+        }
+
+        $this->repositoryCheck = ['url' => $validated['repositoryUrl'], ...$version];
+    }
+
+    /**
+     * Forget the last check once the repository or version is changed, so a different one is checked before installing.
+     */
+    public function updated(string $property): void
+    {
+        if (in_array($property, ['repositoryUrl', 'repositoryRef'], true)) {
+            $this->repositoryCheck = null;
+        }
+    }
+
+    /**
+     * Install the unofficial plugin at the commit the check found.
+     */
+    public function installUnofficialPlugin(): void
+    {
+        $this->authorize('administer');
+
+        abort_if($this->repositoryCheck === null, 409);
+
+        Flux::modal('install-from-repository')->close();
+
+        $this->launch(['action' => 'install', ...$this->repositoryCheck]);
+
+        $this->reset('repositoryUrl', 'repositoryRef', 'repositoryCheck');
+    }
+
     public function removePlugin(string $name): void
     {
         $this->authorize('administer');
@@ -266,7 +334,7 @@ new #[Title('Plugins')] class extends Component {
     /**
      * Start a plugin change in the background, which rebuilds Swage the way an update does.
      *
-     * @param  array<string, string>  $operation
+     * @param  array<string, string|list<string>>  $operation
      */
     protected function launch(array $operation): void
     {
@@ -298,8 +366,15 @@ new #[Title('Plugins')] class extends Component {
 
 <div class="flex flex-col gap-6" @if ($this->operations->contains(fn ($operation) => $operation->status->isInProgress())) wire:poll.2s @endif>
     <div>
-        <flux:heading size="xl" level="1" class="tracking-tight">{{ __('Plugins') }}</flux:heading>
-        <flux:subheading>{{ __('Plugins extend Swage. Installing, updating or removing one rebuilds Swage with the change, and the running release stays live if the rebuild fails.') }}</flux:subheading>
+        <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+                <flux:heading size="xl" level="1" class="tracking-tight">{{ __('Plugins') }}</flux:heading>
+                <flux:subheading>{{ __('Plugins extend Swage. Installing, updating or removing one rebuilds Swage with the change, and the running release stays live if the rebuild fails.') }}</flux:subheading>
+            </div>
+            <flux:modal.trigger name="install-from-repository">
+                <flux:button size="sm" icon="code-bracket">{{ __('Install from a repository') }}</flux:button>
+            </flux:modal.trigger>
+        </div>
     </div>
 
     @unless (app(App\SelfUpdate\SelfUpdater::class)->isSupported())
@@ -411,7 +486,12 @@ new #[Title('Plugins')] class extends Component {
                                     <span title="{{ $plugin->repository }}">{{ $plugin->name }}</span>
                                 @endif
                             </flux:table.cell>
-                            <flux:table.cell><flux:badge size="sm" color="zinc">{{ $plugin->kind->label() }}</flux:badge></flux:table.cell>
+                            <flux:table.cell>
+                                <flux:badge size="sm" color="zinc">{{ $plugin->kind->label() }}</flux:badge>
+                                @unless ($plugin->official)
+                                    <flux:badge size="sm" color="amber" class="ms-1" :title="__('Installed from :repository. Swage has not reviewed it and does not check its signature.', ['repository' => $plugin->repository])">{{ __('Unofficial') }}</flux:badge>
+                                @endunless
+                            </flux:table.cell>
                             <flux:table.cell class="font-mono text-xs">
                                 {{ $plugin->ref }} · {{ $plugin->shortCommit() }}
                                 @if (is_array($update))
@@ -420,7 +500,7 @@ new #[Title('Plugins')] class extends Component {
                                     <flux:badge size="sm" color="emerald" class="ms-2">{{ __('up to date') }}</flux:badge>
                                 @elseif ($checkedForUpdates && array_key_exists($plugin->name, $updates))
                                     <flux:badge size="sm" color="zinc" class="ms-2">{{ __('could not check') }}</flux:badge>
-                                @elseif ($this->index['error'] === null && ! $this->isListed($plugin))
+                                @elseif ($plugin->official && $this->index['error'] === null && ! $this->isListed($plugin))
                                     <flux:badge size="sm" color="zinc" class="ms-2">{{ __('no longer listed') }}</flux:badge>
                                 @endif
                             </flux:table.cell>
@@ -446,7 +526,7 @@ new #[Title('Plugins')] class extends Component {
             </flux:table>
         </x-panel>
 
-        <x-panel icon="squares-plus" :heading="__('Available')" :description="__('Plugins listed in the plugin index. Only these can be installed.')" flush>
+        <x-panel icon="squares-plus" :heading="__('Available')" :description="__('Official plugins, listed in the plugin index. Others can be installed from their git repository.')" flush>
             @if ($this->index['error'])
                 <div class="px-5 py-4">
                     <flux:callout icon="exclamation-triangle" color="amber">
@@ -491,6 +571,40 @@ new #[Title('Plugins')] class extends Component {
             @endif
         </x-panel>
     @endif
+
+    <flux:modal name="install-from-repository" class="w-full max-w-lg">
+        <form wire:submit="checkUnofficialPlugin" class="flex flex-col gap-5">
+            <div>
+                <flux:heading size="lg">{{ __('Install from a repository') }}</flux:heading>
+                <flux:text class="mt-1">{{ __('Install a plugin that is not in the plugin index straight from its git repository. It is updated from that repository\'s version tags.') }}</flux:text>
+            </div>
+
+            <flux:callout icon="exclamation-triangle" color="amber">
+                <flux:callout.text>{{ __('Swage has not reviewed this plugin and does not check its signature. It runs inside Swage with access to everything Swage stores, including the SSH keys of every server. Only install plugins from people you trust.') }}</flux:callout.text>
+            </flux:callout>
+
+            <flux:input wire:model="repositoryUrl" :label="__('Git URL')" placeholder="https://github.com/you/swage-plugin" class="font-mono" />
+            <flux:input wire:model="repositoryRef" :label="__('Tag or branch')" :placeholder="__('The newest version tag')" class="font-mono" />
+
+            @if ($repositoryCheck)
+                <div class="rounded-lg border border-zinc-200 p-3 font-mono text-xs dark:border-white/10">
+                    {{ __(':ref at :commit', ['ref' => $repositoryCheck['ref'], 'commit' => $repositoryCheck['commit']]) }}
+                </div>
+            @endif
+
+            <div class="flex justify-end gap-2">
+                <flux:modal.close>
+                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                </flux:modal.close>
+                @if ($repositoryCheck)
+                    <flux:button type="button" variant="primary" icon="arrow-down-tray" wire:click="installUnofficialPlugin"
+                        wire:confirm="{{ __('Install the plugin from :url at :ref and rebuild Swage with it? It will have access to everything Swage stores.', ['url' => $repositoryCheck['url'], 'ref' => $repositoryCheck['ref']]) }}">{{ __('Install') }}</flux:button>
+                @else
+                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="checkUnofficialPlugin">{{ __('Check repository') }}</flux:button>
+                @endif
+            </div>
+        </form>
+    </flux:modal>
 
     <flux:modal name="plugin-operation" class="w-full max-w-4xl">
         @if ($selected = $this->viewingOperation)

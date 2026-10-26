@@ -22,6 +22,7 @@ use Throwable;
  * Swage is released through version tags, such as v1.2.0, cut on the tracked branch: an update installs the newest
  * one, or the newest commit on the branch while the repository has no version tags yet. The host migration runner only
  * accepts commits on the branch, and never one older than the host last ran, so a tag elsewhere is never installed.
+ * Once the release signers file lists a key, only version tags signed with one are installed.
  *
  * Installs created by the installer use this layout:
  *
@@ -166,7 +167,7 @@ class SelfUpdater
      * Record an update requested from the dashboard and hand it to the queue worker to start. A plugin operation
      * installs or removes a plugin and rebuilds Swage with the change instead.
      *
-     * @param  array{action: 'install', name: string}|array{action: 'update', names: list<string>}|array{action: 'remove', name: string}|null  $pluginOperation
+     * @param  array{action: 'install', name: string}|array{action: 'install', url: string, ref?: string, commit?: string}|array{action: 'update', names: list<string>}|array{action: 'remove', name: string}|null  $pluginOperation
      */
     public function launch(?User $user = null, ?array $pluginOperation = null): SelfUpdate
     {
@@ -192,7 +193,11 @@ class SelfUpdater
         $operation = $update->plugin_operation;
 
         $arguments = match ($operation['action'] ?? null) {
-            'install' => ['swage:plugin:install', $operation['name'], '--force'],
+            'install' => ['swage:plugin:install', ...(isset($operation['url']) ? array_filter([
+                '--url='.$operation['url'],
+                isset($operation['ref']) ? '--ref='.$operation['ref'] : null,
+                isset($operation['commit']) ? '--commit='.$operation['commit'] : null,
+            ]) : [$operation['name']]), '--force'],
             'update' => ['swage:plugin:update', ...$operation['names'], '--force'],
             'remove' => ['swage:plugin:remove', $operation['name'], '--force'],
             default => ['swage:update'],
@@ -250,6 +255,11 @@ class SelfUpdater
 
         $target = $this->latest() ?? throw new RuntimeException("Unable to read the version tags or the [{$this->branch()}] branch from the repository.");
         $currentVersion = $this->currentVersion();
+        $signature = app(ReleaseSignature::class);
+
+        if ($signature->isRequired() && $target['version'] === null) {
+            throw new RuntimeException('Swage only updates to version tags signed with a Swage release key, and the repository has no version tags yet.');
+        }
 
         $update->update(['to_commit' => $target['commit'], 'to_version' => $target['version']]);
 
@@ -268,6 +278,10 @@ class SelfUpdater
 
             $commit = $this->commitOf($release);
             $update->update(['to_commit' => $commit]);
+
+            if ($signature->isRequired()) {
+                $this->checkSignature($update, $signature, $release, $target['version'], $commit, $onOutput);
+            }
 
             $this->step($update, 'Installing Composer dependencies', ['composer', 'install', '--no-dev', '--no-interaction', '--prefer-dist', '--optimize-autoloader'], $release, $onOutput);
 
@@ -307,6 +321,24 @@ class SelfUpdater
         $this->pruneReleases($release);
 
         return $this->finish($update, DeploymentStatus::Finished, "\nSwage is now running ".($update->to_version ? "{$update->to_version} ({$update->to_commit})" : $update->to_commit).".\n", $onOutput);
+    }
+
+    /**
+     * Check that the cloned version tag is signed with a release key and points to the commit the release was cloned at.
+     *
+     * @param  (Closure(string): void)|null  $onOutput
+     *
+     * @throws RuntimeException
+     */
+    protected function checkSignature(SelfUpdate $update, ReleaseSignature $signature, string $release, string $version, string $commit, ?Closure $onOutput): void
+    {
+        $this->write($update, "\n==> Checking the signature of {$version}\n", $onOutput);
+
+        if ($signature->verifyTag($release, $version, $this->environment()) !== $commit) {
+            throw new RuntimeException("The signed tag {$version} does not point to the commit that was cloned, so it was not installed.");
+        }
+
+        $this->write($update, "Signed with a Swage release key.\n", $onOutput);
     }
 
     /**

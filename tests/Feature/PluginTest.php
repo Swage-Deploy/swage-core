@@ -46,6 +46,7 @@ beforeEach(function () {
         'swage.self_update.host_migrator' => $this->root.'/swage-host-migrate',
         'swage.plugins.manifest' => $this->root.'/shared/storage/app/plugins.json',
         'swage.plugins.directory' => $this->root.'/shared/storage/app/plugins',
+        'swage.release_signers' => null,
     ]);
 
     $this->app->instance(SelfUpdater::class, new SelfUpdater($this->release));
@@ -121,6 +122,33 @@ function fakePluginRepository(array $composer, array $overrides = [], bool $heal
         },
     ], $overrides, ['*' => Process::result()]));
 }
+
+/**
+ * Give Swage a release key, so official plugins must come from signed version tags, and fake good signatures for the
+ * plugin's v1.2.0 tag and for Swage's own v2.0.0, which every rebuild then installs.
+ */
+function requireSignedPlugins(string $root): array
+{
+    File::put($root.'/release-signers', 'releases@example.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample');
+    config(['swage.release_signers' => $root.'/release-signers']);
+
+    return [
+        "'git' '-c' 'gpg.format=ssh' *" => Process::result(errorOutput: 'Good "git" signature for releases@example.com'),
+        "'git' 'cat-file' 'tag' 'refs/tags/v1.2.0'" => 'object '.PLUGIN_COMMIT."\ntype commit\ntag v1.2.0\n\nv1.2.0\n",
+        "'git' 'ls-remote' 'origin'" => "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/heads/main\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\trefs/tags/v2.0.0",
+        "'git' 'cat-file' 'tag' 'refs/tags/v2.0.0'" => "object bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\ntype commit\ntag v2.0.0\n\nv2.0.0\n",
+    ];
+}
+
+/**
+ * The composer.json of a plugin the plugin index does not list.
+ */
+function unofficialComposer(array $composer): array
+{
+    return [...$composer, 'name' => 'someone/swage-forgejo'];
+}
+
+const UNOFFICIAL_URL = 'https://github.com/someone/swage-forgejo';
 
 /**
  * Record a plugin as installed, with a checkout at its commit, without fetching it.
@@ -728,4 +756,213 @@ test('plugin names link to their repositories instead of listing the git url', f
         ->assertSee('href="https://github.com/acme/swage-forgejo"', false)
         ->assertDontSee('>https://github.com/acme/swage-gitea.git<', false)
         ->assertDontSee('Repository');
+});
+
+test('once swage has a release key, official plugins are installed only from a signed version tag', function () {
+    fakePluginRepository($this->composer, requireSignedPlugins($this->root));
+
+    $this->artisan('swage:plugin:install', ['name' => 'acme/swage-gitea', '--force' => true])->assertSuccessful();
+
+    expect(app(PluginManifest::class)->find('acme/swage-gitea'))
+        ->official->toBeTrue()
+        ->ref->toBe('v1.2.0')
+        ->commit->toBe(PLUGIN_COMMIT);
+
+    Process::assertRan(fn (PendingProcess $process) => $process->command === ['git', 'fetch', '--quiet', '--depth', '1', 'origin', 'refs/tags/v1.2.0:refs/tags/v1.2.0']);
+    Process::assertRan(fn (PendingProcess $process) => ($process->command[5] ?? null) === 'verify-tag' && $process->command[6] === 'refs/tags/v1.2.0');
+});
+
+test('an official plugin whose tag is not signed with a release key is not installed', function () {
+    fakePluginRepository($this->composer, [
+        ...requireSignedPlugins($this->root),
+        "'git' '-c' 'gpg.format=ssh' *" => Process::result(errorOutput: 'error: no signature found', exitCode: 1),
+    ]);
+
+    $this->artisan('swage:plugin:install', ['name' => 'acme/swage-gitea', '--force' => true])
+        ->expectsOutputToContain('v1.2.0 is not signed by a Swage release key')
+        ->assertFailed();
+
+    expect(app(PluginManifest::class)->all())->toBeEmpty()
+        ->and(File::directories(config('swage.plugins.directory')))->toBeEmpty();
+});
+
+test('once swage has a release key, an official plugin without version tags is not installed from its branch', function () {
+    fakePluginRepository($this->composer, [
+        ...requireSignedPlugins($this->root),
+        "'git' 'ls-remote' '--symref' *" => "ref: refs/heads/main\tHEAD\n".PLUGIN_COMMIT."\trefs/heads/main",
+    ]);
+
+    $this->artisan('swage:plugin:install', ['name' => 'acme/swage-gitea', '--force' => true])
+        ->expectsOutputToContain('only installed from version tags signed with a Swage release key')
+        ->assertFailed();
+
+    Process::assertNotRan(fn (PendingProcess $process) => in_array('fetch', $process->command, true));
+});
+
+test('once swage has a release key, official plugins are not offered new commits on their branch', function () {
+    requireSignedPlugins($this->root);
+    Process::fake(["'git' 'ls-remote' *" => "ref: refs/heads/main\tHEAD\n5555555555555555555555555555555555555555\trefs/heads/main"]);
+
+    expect(app(PluginInstaller::class)->availableUpdate(installedPlugin('main')))->toBeNull();
+});
+
+test('an administrator can install a plugin straight from its git repository, as an unofficial plugin', function () {
+    fakePluginRepository(unofficialComposer($this->composer), requireSignedPlugins($this->root));
+
+    $this->artisan('swage:plugin:install', ['--url' => UNOFFICIAL_URL, '--force' => true])
+        ->expectsOutputToContain('Swage has not reviewed it and does not check its signature')
+        ->assertSuccessful();
+
+    expect(app(PluginManifest::class)->find('someone/swage-forgejo'))
+        ->official->toBeFalse()
+        ->repository->toBe(UNOFFICIAL_URL)
+        ->ref->toBe('v1.2.0');
+
+    Process::assertRan(fn (PendingProcess $process) => $process->command === ['git', 'fetch', '--quiet', '--depth', '1', 'origin', 'v1.2.0']);
+    Process::assertNotRan(fn (PendingProcess $process) => in_array('verify-tag', (array) $process->command, true) && in_array('refs/tags/v1.2.0', (array) $process->command, true));
+});
+
+test('a plugin installed from a repository cannot take the name of an official plugin', function () {
+    fakePluginRepository($this->composer);
+
+    $this->artisan('swage:plugin:install', ['--url' => UNOFFICIAL_URL, '--force' => true])
+        ->expectsOutputToContain('acme/swage-gitea is an official plugin. Install it from the plugin index instead')
+        ->assertFailed();
+
+    expect(app(PluginManifest::class)->all())->toBeEmpty()
+        ->and(File::directories(config('swage.plugins.directory')))->toBeEmpty();
+});
+
+test('a plugin installed from one repository is not replaced by a plugin of its name from another', function () {
+    fakePluginRepository(unofficialComposer($this->composer));
+    app(PluginManifest::class)->save(new Plugin('someone/swage-forgejo', PluginKind::SourceControl, 'https://github.com/other/swage-forgejo', 'v1.0.0', '7777777777777777777777777777777777777777', 'someone-swage-forgejo-777777777777', now()->toIso8601String(), official: false));
+
+    $this->artisan('swage:plugin:install', ['--url' => UNOFFICIAL_URL, '--force' => true])
+        ->expectsOutputToContain('someone/swage-forgejo is already installed from https://github.com/other/swage-forgejo')
+        ->assertFailed();
+
+    expect(app(PluginManifest::class)->find('someone/swage-forgejo')->repository)->toBe('https://github.com/other/swage-forgejo');
+});
+
+test('a plugin is not installed from a repository that moved on since it was checked', function () {
+    fakePluginRepository(unofficialComposer($this->composer));
+
+    $this->artisan('swage:plugin:install', ['--url' => UNOFFICIAL_URL, '--commit' => '1111111111111111111111111111111111111111', '--force' => true])
+        ->expectsOutputToContain('is now at '.PLUGIN_COMMIT.', not 1111111111111111111111111111111111111111')
+        ->assertFailed();
+
+    expect(app(PluginManifest::class)->all())->toBeEmpty();
+});
+
+test('a plugin is installed from either the plugin index or a repository, not both or neither', function (array $arguments) {
+    Process::fake();
+
+    $this->artisan('swage:plugin:install', [...$arguments, '--force' => true])
+        ->expectsOutputToContain('Give the name of a plugin in the plugin index, or the git repository of another plugin with --url')
+        ->assertFailed();
+})->with([
+    'neither' => [[]],
+    'both' => [['name' => 'acme/swage-gitea', '--url' => UNOFFICIAL_URL]],
+]);
+
+test('unofficial plugins are updated from their own repository, without the plugin index', function () {
+    app(PluginManifest::class)->save(new Plugin('someone/swage-forgejo', PluginKind::SourceControl, UNOFFICIAL_URL, 'v1.1.0', '9999999999999999999999999999999999999999', 'someone-swage-forgejo-999999999999', now()->toIso8601String(), official: false));
+    fakePluginRepository(unofficialComposer($this->composer), requireSignedPlugins($this->root));
+    Http::fake([PLUGIN_INDEX_URL => Http::response('Server Error', 500), '*/up' => Http::response('OK')]);
+
+    $this->artisan('swage:plugin:update', ['--force' => true])->assertSuccessful();
+
+    expect(app(PluginManifest::class)->find('someone/swage-forgejo'))
+        ->official->toBeFalse()
+        ->ref->toBe('v1.2.0')
+        ->commit->toBe(PLUGIN_COMMIT);
+
+    Process::assertNotRan(fn (PendingProcess $process) => in_array('verify-tag', (array) $process->command, true) && in_array('refs/tags/v1.2.0', (array) $process->command, true));
+});
+
+test('an update that would turn a plugin into another package is refused', function () {
+    app(PluginManifest::class)->save(new Plugin('someone/swage-forgejo', PluginKind::SourceControl, UNOFFICIAL_URL, 'v1.1.0', '9999999999999999999999999999999999999999', 'someone-swage-forgejo-999999999999', now()->toIso8601String(), official: false));
+    fakePluginRepository([...$this->composer, 'name' => 'someone/swage-other']);
+
+    $this->artisan('swage:plugin:update', ['--force' => true])
+        ->expectsOutputToContain('now holds someone/swage-other')
+        ->assertFailed();
+
+    expect(app(PluginManifest::class)->find('someone/swage-forgejo')->ref)->toBe('v1.1.0');
+});
+
+test('the dashboard checks a repository, then installs the plugin at the commit the check found', function () {
+    Queue::fake();
+    Process::fake(["'git' 'ls-remote' *" => PLUGIN_REFS]);
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index')
+        ->assertSee('Install from a repository')
+        ->set('repositoryUrl', UNOFFICIAL_URL)
+        ->call('checkUnofficialPlugin')
+        ->assertHasNoErrors()
+        ->assertSee('v1.2.0 at '.PLUGIN_COMMIT)
+        ->call('installUnofficialPlugin');
+
+    $operation = SelfUpdate::sole();
+
+    expect($operation->plugin_operation)->toBe(['action' => 'install', 'url' => UNOFFICIAL_URL, 'ref' => 'v1.2.0', 'commit' => PLUGIN_COMMIT])
+        ->and($operation->title())->toBe('Install '.UNOFFICIAL_URL.' at v1.2.0');
+
+    Queue::assertPushed(StartSelfUpdate::class);
+});
+
+test('changing the repository after checking it needs another check before installing', function () {
+    Queue::fake();
+    Process::fake(["'git' 'ls-remote' *" => PLUGIN_REFS]);
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index')
+        ->set('repositoryUrl', UNOFFICIAL_URL)
+        ->call('checkUnofficialPlugin')
+        ->set('repositoryUrl', 'https://github.com/someone/swage-other')
+        ->assertSet('repositoryCheck', null)
+        ->call('installUnofficialPlugin')
+        ->assertStatus(409);
+
+    expect(SelfUpdate::count())->toBe(0);
+});
+
+test('only git urls can be checked from the dashboard', function (string $url) {
+    Process::fake();
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index')
+        ->set('repositoryUrl', $url)
+        ->call('checkUnofficialPlugin')
+        ->assertHasErrors('repositoryUrl');
+
+    Process::assertNothingRan();
+})->with(['ext::sh -c id', 'file:///etc', '--upload-pack=id', 'http://github.com/someone/swage-forgejo']);
+
+test('the queue worker starts an install from a repository with the commit it was checked at', function () {
+    Process::fake();
+    $operation = SelfUpdate::factory()->create(['plugin_operation' => ['action' => 'install', 'url' => UNOFFICIAL_URL, 'ref' => 'v1.2.0', 'commit' => PLUGIN_COMMIT]]);
+
+    (new StartSelfUpdate($operation))->handle(app(SelfUpdater::class));
+
+    Process::assertRan(fn (PendingProcess $process) => str_contains($process->command, "'swage:plugin:install' '--url=".UNOFFICIAL_URL."' '--ref=v1.2.0' '--commit=".PLUGIN_COMMIT."' '--force' '--update={$operation->id}'"));
+});
+
+test('unofficial plugins are marked as such and are still offered updates', function () {
+    app(PluginManifest::class)->save(new Plugin('someone/swage-forgejo', PluginKind::SourceControl, UNOFFICIAL_URL, 'v1.1.0', '9999999999999999999999999999999999999999', 'someone-swage-forgejo-999999999999', now()->toIso8601String(), official: false));
+    Process::fake(["'git' 'ls-remote' *" => PLUGIN_REFS]);
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index')
+        ->call('checkForUpdates')
+        ->assertSee('Unofficial')
+        ->assertSee('v1.2.0 available')
+        ->assertDontSee('no longer listed');
+});
+
+test('plugins recorded before unofficial plugins existed are official', function () {
+    File::ensureDirectoryExists(dirname(config('swage.plugins.manifest')));
+    File::put(config('swage.plugins.manifest'), json_encode(['plugins' => [[
+        'name' => 'acme/swage-gitea', 'kind' => 'source-control', 'repository' => 'https://github.com/acme/swage-gitea.git',
+        'ref' => 'v1.2.0', 'commit' => PLUGIN_COMMIT, 'checkout' => 'acme-swage-gitea-cccccccccccc', 'installed_at' => now()->toIso8601String(),
+    ]]]));
+
+    expect(app(PluginManifest::class)->find('acme/swage-gitea')->official)->toBeTrue();
 });

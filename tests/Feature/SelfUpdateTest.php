@@ -24,7 +24,7 @@ beforeEach(function () {
     File::ensureDirectoryExists($this->root.'/shared/storage');
     File::put($this->root.'/shared/.env', 'APP_ENV=production');
     File::put($this->root.'/swage-host-migrate', '');
-    config(['swage.self_update.host_migrator' => $this->root.'/swage-host-migrate']);
+    config(['swage.self_update.host_migrator' => $this->root.'/swage-host-migrate', 'swage.release_signers' => null]);
     symlink($this->release, $this->root.'/current');
 
     $this->app->instance(SelfUpdater::class, new SelfUpdater($this->release));
@@ -53,6 +53,25 @@ function fakeRepository(array $overrides = [], bool $healthy = true): void
         },
         ...$overrides,
         '*' => Process::result(),
+    ]);
+}
+
+/**
+ * Give the running release a release key, so it only updates to signed version tags, and fake a repository whose
+ * newest version is v2.0.0 at LATEST_COMMIT.
+ */
+function fakeSignedRepository(string $root, array $overrides = []): void
+{
+    File::put($root.'/release-signers', 'releases@example.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample');
+    config(['swage.release_signers' => $root.'/release-signers']);
+
+    fakeRepository([
+        "'git' 'ls-remote' *" => LATEST_COMMIT."\trefs/heads/main\n"
+            ."eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\trefs/tags/v2.0.0\n"
+            .LATEST_COMMIT."\trefs/tags/v2.0.0^{}",
+        "'git' '-c' 'gpg.format=ssh' *" => Process::result(errorOutput: 'Good "git" signature for releases@example.com'),
+        "'git' 'cat-file' 'tag' 'refs/tags/v2.0.0'" => 'object '.LATEST_COMMIT."\ntype commit\ntag v2.0.0\ntagger Swage\n\nv2.0.0\n",
+        ...$overrides,
     ]);
 }
 
@@ -459,4 +478,59 @@ test('an update records the version it started from, even for a release cloned b
     $this->artisan('swage:update')->assertSuccessful();
 
     expect(SelfUpdate::sole())->from_version->toBe('v1.1.0')->to_version->toBe('v1.2.0');
+});
+
+test('once swage has a release key, it updates only to a version tag signed with it', function () {
+    fakeSignedRepository($this->root);
+
+    $this->artisan('swage:update')->assertSuccessful();
+
+    expect(SelfUpdate::sole())
+        ->status->toBe(DeploymentStatus::Finished)
+        ->to_version->toBe('v2.0.0')
+        ->output->toContain('Checking the signature of v2.0.0')
+        ->output->toContain('Signed with a Swage release key.');
+
+    Process::assertRan(fn (PendingProcess $process) => $process->command === [
+        'git', '-c', 'gpg.format=ssh', '-c', 'gpg.ssh.allowedSignersFile='.$this->root.'/release-signers', 'verify-tag', 'refs/tags/v2.0.0',
+    ] && $process->path === currentRelease($this->root));
+});
+
+test('a version tag that is not signed with a release key is not installed', function () {
+    fakeSignedRepository($this->root, [
+        "'git' '-c' 'gpg.format=ssh' *" => Process::result(errorOutput: 'error: no signature found', exitCode: 1),
+    ]);
+
+    $this->artisan('swage:update')->assertFailed();
+
+    expect(SelfUpdate::sole())
+        ->status->toBe(DeploymentStatus::Failed)
+        ->output->toContain('v2.0.0 is not signed by a Swage release key');
+
+    expect(currentRelease($this->root))->toBe(realpath($this->release))
+        ->and(File::directories($this->root.'/releases'))->toHaveCount(1);
+
+    Process::assertDidntRun(fn (PendingProcess $process) => ($process->command[0] ?? null) === 'composer');
+});
+
+test('a signed tag that points elsewhere than the commit that was cloned is not installed', function () {
+    fakeSignedRepository($this->root, [
+        "'git' 'cat-file' 'tag' 'refs/tags/v2.0.0'" => "object 9999999999999999999999999999999999999999\ntype commit\ntag v2.0.0\n\nv2.0.0\n",
+    ]);
+
+    $this->artisan('swage:update')->assertFailed();
+
+    expect(SelfUpdate::sole()->output)->toContain('does not point to the commit that was cloned')
+        ->and(currentRelease($this->root))->toBe(realpath($this->release));
+});
+
+test('once swage has a release key, it no longer follows the branch of a repository without version tags', function () {
+    fakeRepository();
+    File::put($this->root.'/release-signers', 'releases@example.com namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample');
+    config(['swage.release_signers' => $this->root.'/release-signers']);
+
+    $this->artisan('swage:update')->assertFailed();
+
+    expect(SelfUpdate::sole()->output)->toContain('Swage only updates to version tags signed with a Swage release key')
+        ->and(currentRelease($this->root))->toBe(realpath($this->release));
 });

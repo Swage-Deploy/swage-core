@@ -3,6 +3,7 @@
 namespace App\Plugins;
 
 use App\SelfUpdate\GitRefs;
+use App\SelfUpdate\ReleaseSignature;
 use App\SelfUpdate\SelfUpdater;
 use App\SourceControl\SourceControlProviders;
 use Illuminate\Support\Facades\File;
@@ -19,24 +20,37 @@ use RuntimeException;
  *
  * Each version of a plugin is checked out into a directory of its own, named after its commit, so a failed update
  * leaves the previous version's checkout in place for the release that is still running.
+ *
+ * Official plugins are only installed and updated from version tags signed with a release key, once Swage has any.
  */
 class PluginInstaller
 {
-    public function __construct(protected PluginManifest $manifest) {}
+    /**
+     * The git URLs plugins are installed from: HTTPS, or SSH in either form.
+     */
+    public const string REPOSITORY_PATTERN = '/^(https:\/\/|git@|ssh:\/\/)\S+$/D';
+
+    public function __construct(protected PluginManifest $manifest, protected ReleaseSignature $signature) {}
 
     /**
      * Fetch a plugin and check that it is a Swage plugin written for this version of the contract. The plugin is not
      * added to the manifest.
      *
      * @param  string|null  $ref  A tag or branch to install instead of the newest version.
+     * @param  bool  $official  Whether the plugin is installed from the plugin index, so its tag must be signed.
      *
      * @throws RuntimeException when the repository cannot be fetched or does not hold a compatible plugin.
      */
-    public function fetch(string $repository, ?string $ref = null): Plugin
+    public function fetch(string $repository, ?string $ref = null, bool $official = false): Plugin
     {
         $this->validateSource($repository, $ref);
 
         $ref ??= $this->latest($repository)['ref'];
+        $signed = $official && $this->signature->isRequired();
+
+        if ($signed && ! GitRefs::isVersion($ref)) {
+            throw new RuntimeException('Official plugins are only installed from version tags signed with a Swage release key, and '.($ref === '' ? 'none was found' : "{$ref} is not a version tag").'.');
+        }
 
         $staging = $this->directory().'/.fetching-'.Str::random(8);
         File::ensureDirectoryExists($staging);
@@ -44,10 +58,15 @@ class PluginInstaller
         try {
             $this->git($staging, ['init', '--quiet']);
             $this->git($staging, ['remote', 'add', 'origin', $repository]);
-            $this->git($staging, ['fetch', '--quiet', '--depth', '1', 'origin', $ref], "Unable to fetch {$ref} from {$repository}.");
+            // A signed tag is fetched as a tag, so its signature comes with it.
+            $this->git($staging, ['fetch', '--quiet', '--depth', '1', 'origin', $signed ? "refs/tags/{$ref}:refs/tags/{$ref}" : $ref], "Unable to fetch {$ref} from {$repository}.");
             $this->git($staging, ['checkout', '--quiet', '--detach', 'FETCH_HEAD']);
 
             $commit = trim($this->git($staging, ['rev-parse', 'HEAD']));
+
+            if ($signed && $this->signature->verifyTag($staging, $ref, app(SelfUpdater::class)->environment()) !== $commit) {
+                throw new RuntimeException("The signed tag {$ref} does not point to the commit that was fetched, so it was not installed.");
+            }
             [$name, $kind] = $this->readComposer($staging);
             $checkout = Str::slug(str_replace('/', '-', $name)).'-'.substr($commit, 0, 12);
 
@@ -65,6 +84,7 @@ class PluginInstaller
             commit: $commit,
             checkout: $checkout,
             installedAt: now()->toIso8601String(),
+            official: $official,
         );
     }
 
@@ -238,6 +258,11 @@ class PluginInstaller
                 : null;
         }
 
+        // An official plugin's branch is never signed, so it only moves to signed version tags.
+        if ($plugin->official && $this->signature->isRequired()) {
+            return null;
+        }
+
         if (isset($refs['branches'][$plugin->ref]) && $refs['branches'][$plugin->ref] !== $plugin->commit) {
             return ['ref' => $plugin->ref, 'commit' => $refs['branches'][$plugin->ref]];
         }
@@ -265,6 +290,28 @@ class PluginInstaller
         }
 
         return ['ref' => $refs['head'], 'commit' => $refs['branches'][$refs['head']]];
+    }
+
+    /**
+     * The version a plugin would be installed at, and its commit: the given tag or branch, or else what a new install
+     * follows.
+     *
+     * @return array{ref: string, commit: string}
+     *
+     * @throws RuntimeException when the repository cannot be reached or has no such tag or branch.
+     */
+    public function resolve(string $repository, ?string $ref = null): array
+    {
+        $this->validateSource($repository, $ref);
+
+        if ($ref === null) {
+            return $this->latest($repository);
+        }
+
+        $refs = $this->remoteRefs($repository);
+        $commit = $refs['tags'][$ref] ?? $refs['branches'][$ref] ?? throw new RuntimeException("{$repository} has no tag or branch named {$ref}.");
+
+        return ['ref' => $ref, 'commit' => $commit];
     }
 
     /**
