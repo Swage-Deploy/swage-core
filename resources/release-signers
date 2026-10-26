@@ -4,3 +4,5 @@
 #
 # Once a key is listed, Swage only updates itself, and installs and updates official plugins, from tags signed with
 # one of these keys. With none listed, tags are not checked.
+
+releases@swagedeploy.app namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFP4CqJfY7wvSn55BvKssi6EgNaWW8PGhuF+yBNd2rAO
