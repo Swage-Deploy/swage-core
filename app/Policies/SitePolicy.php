@@ -42,6 +42,15 @@ class SitePolicy
         return $site->server->user_id === $user->id;
     }
 
+    /**
+     * Determine whether the user can change the site's custom nginx. nginx reads it as root and it can reach anything on
+     * the server, such as other sites' PHP-FPM pools and files, so only those managing the server may.
+     */
+    public function editNginx(User $user, Site $site): bool
+    {
+        return $user->can('update', $site->server);
+    }
+
     public function manageMembers(User $user, Site $site): bool
     {
         return $user->can('manageMembers', $site->server) || $site->memberRole($user) === MemberRole::Manager;

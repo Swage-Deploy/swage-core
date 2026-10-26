@@ -55,7 +55,7 @@ new class extends Component {
      */
     public function save(ApplySiteNginxOverride $applyOverride): void
     {
-        $this->authorize('update', $this->site);
+        $this->authorize('editNginx', $this->site);
 
         if ($this->site->status !== ResourceStatus::Installed) {
             Flux::toast(variant: 'danger', text: __('Wait for the site to finish installing first.'));
@@ -102,18 +102,26 @@ new class extends Component {
     <x-pages::sites.layout :site="$site">
         <div class="flex flex-col gap-6">
             <x-panel icon="code-bracket-square" :heading="__('Custom nginx')" :description="__('Directives and location blocks for this site\'s server block.')">
-                <x-slot:actions>
-                    @if ($this->hasUnsavedChanges)
-                        <flux:button size="sm" variant="ghost" wire:click="revert">{{ __('Discard changes') }}</flux:button>
-                    @endif
-                    <flux:button size="sm" variant="primary" icon="check" wire:click="save" wire:loading.attr="disabled" wire:target="save">
-                        <span wire:loading.remove wire:target="save">{{ __('Save & apply') }}</span>
-                        <span wire:loading wire:target="save">{{ __('Applying...') }}</span>
-                    </flux:button>
-                </x-slot:actions>
+                @can('editNginx', $site)
+                    <x-slot:actions>
+                        @if ($this->hasUnsavedChanges)
+                            <flux:button size="sm" variant="ghost" wire:click="revert">{{ __('Discard changes') }}</flux:button>
+                        @endif
+                        <flux:button size="sm" variant="primary" icon="check" wire:click="save" wire:loading.attr="disabled" wire:target="save">
+                            <span wire:loading.remove wire:target="save">{{ __('Save & apply') }}</span>
+                            <span wire:loading wire:target="save">{{ __('Applying...') }}</span>
+                        </flux:button>
+                    </x-slot:actions>
+                @endcan
 
                 <div class="flex flex-col gap-4">
-                    <flux:textarea wire:model.live.debounce.400ms="override" rows="14" spellcheck="false" placeholder="client_max_body_size 512m;&#10;&#10;location /docs {&#10;    try_files $uri $uri/ =404;&#10;}" class="!bg-zinc-950 font-mono text-xs !text-zinc-200 dark:!bg-black/40" />
+                    <flux:textarea wire:model.live.debounce.400ms="override" :readonly="! auth()->user()->can('editNginx', $site)" rows="14" spellcheck="false" placeholder="client_max_body_size 512m;&#10;&#10;location /docs {&#10;    try_files $uri $uri/ =404;&#10;}" class="!bg-zinc-950 font-mono text-xs !text-zinc-200 dark:!bg-black/40" />
+
+                    @cannot('editNginx', $site)
+                        <flux:callout icon="lock-closed">
+                            <flux:callout.text>{{ __('Only the server\'s owner and Managers can change custom nginx, since nginx reads it as root and it can reach anything on the server.') }}</flux:callout.text>
+                        </flux:callout>
+                    @endcannot
 
                     <flux:text class="text-xs">
                         {{ __('When a directive or location here matches one in Swage\'s config, Swage\'s is removed so yours applies. nginx checks the config before reloading, and the previous config is put back if it is rejected. It is kept when Swage rewrites the site\'s config, such as when a certificate is added.') }}
