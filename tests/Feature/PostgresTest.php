@@ -65,6 +65,7 @@ test('provisioning installs postgres with pgvector, tuned to the hardware, inste
         'memory_mb' => 4096,
         'disk_gb' => 80,
         'os_version' => '24.04',
+        'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample',
     ]);
 
     $server->refresh();
@@ -86,7 +87,7 @@ test('provisioning installs postgres with pgvector, tuned to the hardware, inste
 test('plain postgres does not install pgvector', function () {
     $server = Server::factory()->postgres()->pending()->create();
 
-    $this->post(route('provision.specs', $server->provision_token), ['cpu_cores' => 2, 'memory_mb' => 4096, 'disk_gb' => 80, 'os_version' => '24.04'])
+    $this->post(route('provision.specs', $server->provision_token), ['cpu_cores' => 2, 'memory_mb' => 4096, 'disk_gb' => 80, 'os_version' => '24.04', 'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'])
         ->assertSee('apt-get install -yq postgresql'."\n", escape: false)
         ->assertDontSee('pgvector');
 });

@@ -2,6 +2,7 @@
 
 use App\Enums\ServerStatus;
 use App\Models\Server;
+use Illuminate\Support\Facades\URL;
 use Livewire\Livewire;
 
 test('a pending server serves its bootstrap script', function () {
@@ -20,7 +21,8 @@ test('the bootstrap never overwrites itself with the provisioning script', funct
     preg_match('/-o (\\S+) &&/', $server->provisionCommand(), $download);
     preg_match('/-o (\\S+)\\s*$/m', $bootstrap, $provisionScript);
 
-    expect($download[1])->toBe('/tmp/swage-bootstrap.sh')
+    expect($download[1])->toBe('"$f"')
+        ->and($server->provisionCommand())->toContain('f=$(mktemp) && ')
         ->and($provisionScript[1])->toBe('/root/swage-provision.sh')
         ->and($bootstrap)->toContain("main \"\$@\"\nexit\n");
 });
@@ -28,7 +30,50 @@ test('the bootstrap never overwrites itself with the provisioning script', funct
 test('the provision command installs curl when the server lacks it, before downloading the bootstrap', function () {
     $command = Server::factory()->pending()->create()->provisionCommand();
 
-    expect($command)->toStartWith('(command -v curl > /dev/null || (apt-get update -qq && apt-get install -yqq curl > /dev/null)) && curl -fsSL ');
+    expect($command)->toStartWith('(command -v curl > /dev/null || (apt-get update -qq && apt-get install -yqq curl > /dev/null)) && f=$(mktemp) && curl -fsSL ');
+});
+
+test('over https, the provisioning scripts can only be fetched over https', function () {
+    config(['app.url' => 'https://swage.example.com']);
+    URL::forceRootUrl('https://swage.example.com');
+    URL::forceScheme('https');
+    $server = Server::factory()->pending()->create();
+
+    expect($server->provisionsOverHttps())->toBeTrue()
+        ->and($server->provisionCommand())->toContain("curl -fsSL --proto '=https' 'https://swage.example.com/provision/")
+        ->and($this->get(route('provision.script', $server->provision_token))->getContent())->toContain("curl -fsSL --proto '=https' -X POST 'https://swage.example.com/provision/");
+});
+
+test('the server page warns when provisioning would travel over plain http', function () {
+    URL::forceRootUrl('http://swage.example.com');
+    URL::forceScheme('http');
+    $server = Server::factory()->pending()->create();
+
+    expect($server->provisionsOverHttps())->toBeFalse()
+        ->and($server->provisionCommand())->not->toContain('--proto');
+
+    $this->actingAs($server->user)->get(route('servers.show', $server))
+        ->assertOk()
+        ->assertSee('Swage is not served over HTTPS');
+});
+
+test('the bootstrap creates the ssh host key it reports when the server has none, and stops without one', function () {
+    $bootstrap = $this->get(route('provision.script', Server::factory()->pending()->create()->provision_token))->getContent();
+
+    expect($bootstrap)
+        ->toContain("[ ! -f /etc/ssh/ssh_host_ed25519_key.pub ]; then\n        ssh-keygen -A")
+        ->toContain("echo \"Swage could not read the server's ed25519 SSH host key.\" >&2\n        exit 1")
+        ->not->toContain('|| true)');
+});
+
+test('a server that reports no host key is not provisioned', function () {
+    $server = Server::factory()->pending()->create();
+
+    $this->postJson(route('provision.specs', $server->provision_token), ['cpu_cores' => 2, 'memory_mb' => 4096, 'disk_gb' => 80, 'os_version' => '24.04'])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('host_key');
+
+    expect($server->fresh()->status)->toBe(ServerStatus::Pending);
 });
 
 test('the bootstrap script is unavailable once a server is active', function () {
@@ -45,6 +90,7 @@ test('reporting specs returns a provisioning script tuned to the hardware', func
         'memory_mb' => 4096,
         'disk_gb' => 80,
         'os_version' => '24.04',
+        'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample',
     ]);
 
     $server->refresh();
@@ -70,6 +116,7 @@ test('the provisioning script leaves swap and kernel settings to a container hos
         'memory_mb' => 4096,
         'disk_gb' => 80,
         'os_version' => '24.04',
+        'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample',
     ])->assertOk()->getContent();
 
     $containerCheck = strpos($script, 'if swage_in_container; then');

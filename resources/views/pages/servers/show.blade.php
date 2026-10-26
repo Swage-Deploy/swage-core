@@ -202,6 +202,12 @@ new class extends Component {
                         @endif
 
                         @can('update', $server)
+                            @unless ($server->provisionsOverHttps())
+                                <flux:callout icon="exclamation-triangle" color="amber">
+                                    <flux:callout.heading>{{ __('Swage is not served over HTTPS') }}</flux:callout.heading>
+                                    <flux:callout.text>{{ __('The server would fetch its provisioning scripts, which run as root, and report its SSH host key over plain HTTP, where anyone on the way could change them. Serve Swage over HTTPS and set APP_URL to its https:// address before provisioning.') }}</flux:callout.text>
+                                </flux:callout>
+                            @endunless
                             <flux:input readonly copyable :value="$server->provisionCommand()" class="font-mono" />
                         @else
                             <flux:text>{{ __('The server\'s owner or a manager can see the command.') }}</flux:text>

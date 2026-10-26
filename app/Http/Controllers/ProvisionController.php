@@ -36,7 +36,8 @@ class ProvisionController extends Controller
             'memory_mb' => ['required', 'integer', 'min:512', 'max:16777216'],
             'disk_gb' => ['required', 'integer', 'min:1', 'max:1048576'],
             'os_version' => ['required', 'string', 'max:20'],
-            'host_key' => ['nullable', 'string', 'max:200', 'regex:/^ssh-ed25519 [A-Za-z0-9+\/]+={0,2}$/D'],
+            // The key is pinned before Swage first connects, so a server that cannot report one is not provisioned.
+            'host_key' => ['required', 'string', 'max:200', 'regex:/^ssh-ed25519 [A-Za-z0-9+\/]+={0,2}$/D'],
         ]);
 
         $tuning = $applySpecs->handle($server, new ServerSpecs(
@@ -51,7 +52,7 @@ class ProvisionController extends Controller
             'status' => ServerStatus::Provisioning,
             'os_version' => $validated['os_version'],
             'provisioning_step' => 'Starting',
-            'host_key' => $validated['host_key'] ?? null,
+            'host_key' => $validated['host_key'],
             'applied_upgrades' => ServerUpgrades::ids(),
             'redis_password' => $server->has_redis ? ($server->redis_password ?? Str::password(40, symbols: false)) : null,
         ]);

@@ -25,11 +25,22 @@ main() {
     CPU_CORES=$(nproc)
     MEMORY_MB=$(awk '/^MemTotal:/ { print int($2 / 1024) }' /proc/meminfo)
     DISK_GB=$(df -BG --output=size / | tail -n 1 | tr -dc '0-9')
-    HOST_KEY=$(awk '{ print $1 " " $2 }' /etc/ssh/ssh_host_ed25519_key.pub 2> /dev/null || true)
+    # Swage pins this key before it ever connects over SSH, so the server must have one.
+    if [ ! -f /etc/ssh/ssh_host_ed25519_key.pub ]; then
+        ssh-keygen -A
+        systemctl reload ssh 2> /dev/null || systemctl reload sshd 2> /dev/null || true
+    fi
+
+    HOST_KEY=$(awk '{ print $1 " " $2 }' /etc/ssh/ssh_host_ed25519_key.pub)
+
+    if [ -z "$HOST_KEY" ]; then
+        echo "Swage could not read the server's ed25519 SSH host key." >&2
+        exit 1
+    fi
 
     echo "Detected ${CPU_CORES} CPU core(s), ${MEMORY_MB}MB memory and ${DISK_GB}GB disk."
 
-    curl -fsSL -X POST '{!! route('provision.specs', $server->provision_token) !!}' \
+    curl -fsSL{!! $server->provisionsOverHttps() ? " --proto '=https'" : '' !!} -X POST '{!! route('provision.specs', $server->provision_token) !!}' \
         -d "cpu_cores=${CPU_CORES}" \
         -d "memory_mb=${MEMORY_MB}" \
         -d "disk_gb=${DISK_GB}" \

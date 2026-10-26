@@ -401,8 +401,19 @@ class Server extends Model
     public function provisionCommand(): string
     {
         $url = route('provision.script', $this->provision_token);
+        $proto = $this->provisionsOverHttps() ? " --proto '=https'" : '';
 
-        // Minimal images can lack curl, which fetches the script here and reports progress from it, so it is installed first.
-        return "(command -v curl > /dev/null || (apt-get update -qq && apt-get install -yqq curl > /dev/null)) && curl -fsSL '{$url}' -o /tmp/swage-bootstrap.sh && bash /tmp/swage-bootstrap.sh";
+        // Minimal images can lack curl, which fetches the script here and reports progress from it, so it is installed
+        // first. The script is saved to a file only root can write, with a name no one can know in advance.
+        return "(command -v curl > /dev/null || (apt-get update -qq && apt-get install -yqq curl > /dev/null)) && f=\$(mktemp) && curl -fsSL{$proto} '{$url}' -o \"\$f\" && bash \"\$f\"";
+    }
+
+    /**
+     * Determine if the server fetches its provisioning scripts over HTTPS. Over plain HTTP, anyone on the way could
+     * change the scripts it runs as root, or the host key it reports.
+     */
+    public function provisionsOverHttps(): bool
+    {
+        return str_starts_with(route('provision.script', $this->provision_token ?? 'token'), 'https://');
     }
 }

@@ -76,7 +76,7 @@ test('the private ip address must be a different, valid ip address', function (s
 test('provisioning a database server skips the web stack and opens only ssh', function () {
     $server = Server::factory()->database()->postgres()->pending()->create(['private_ip_address' => '10.0.0.5']);
 
-    $response = $this->post(route('provision.specs', $server->provision_token), ['cpu_cores' => 4, 'memory_mb' => 8192, 'disk_gb' => 160, 'os_version' => '24.04']);
+    $response = $this->post(route('provision.specs', $server->provision_token), ['cpu_cores' => 4, 'memory_mb' => 8192, 'disk_gb' => 160, 'os_version' => '24.04', 'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample']);
 
     $server->refresh();
 
@@ -308,7 +308,7 @@ test('sync jobs only run for the server they were queued for', function () {
 test('tuning stops ubuntu\'s mysqld.cnf from overriding the bind address', function () {
     $server = Server::factory()->database()->pending()->create();
 
-    $this->post(route('provision.specs', $server->provision_token), ['cpu_cores' => 2, 'memory_mb' => 4096, 'disk_gb' => 80, 'os_version' => '24.04'])
+    $this->post(route('provision.specs', $server->provision_token), ['cpu_cores' => 2, 'memory_mb' => 4096, 'disk_gb' => 80, 'os_version' => '24.04', 'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'])
         ->assertSee("sed -i -E 's/^[[:space:]]*bind-address/# &/' /etc/mysql/mysql.conf.d/mysqld.cnf", escape: false)
         ->assertSee('bind-address = *', escape: false);
 });
