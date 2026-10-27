@@ -3,7 +3,6 @@
 namespace App\Models;
 
 use App\Enums\ResourceStatus;
-use App\Provisioning\Upgrades\RootOwnedDaemonLogs;
 use Database\Factories\DaemonFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -80,18 +79,6 @@ class Daemon extends Model
      */
     public function logPath(): string
     {
-        return $this->logsToRootOwnedDirectory()
-            ? self::LOG_DIRECTORY."/{$this->programName()}.log"
-            : '/home/'.config('swage.user')."/.swage/{$this->programName()}.log";
-    }
-
-    /**
-     * Determine if the daemon logs to the root-owned log directory.
-     *
-     * Daemons on servers provisioned before it existed log to Swage's user's home until the server is upgraded.
-     */
-    public function logsToRootOwnedDirectory(): bool
-    {
-        return $this->server->hasAppliedUpgrade(RootOwnedDaemonLogs::ID);
+        return self::LOG_DIRECTORY."/{$this->programName()}.log";
     }
 }

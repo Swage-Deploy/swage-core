@@ -30,7 +30,7 @@ use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Http;
 use Livewire\Livewire;
 
-test('new sites are isolated with their own database and database user by default', function () {
+test('new sites run as their own user with their own database and database user by default', function () {
     Bus::fake();
     $server = Server::factory()->create();
 
@@ -109,7 +109,7 @@ test('suggested names never overwrite names the user typed', function () {
 
 test('suggested names skip those already taken on the server', function () {
     $server = Server::factory()->create();
-    Site::factory()->for($server)->isolated('example')->create();
+    Site::factory()->for($server)->systemUser('example')->create();
 
     expect(SiteSystemUser::suggest('www.example.com', $server))->toBe('example_2')
         ->and(SiteSystemUser::suggest('app.example.co.uk', $server))->toBe('app_example_co')
@@ -134,7 +134,7 @@ test('system users are validated', function (string $systemUser, Closure $setUp)
     'starts with a digit' => ['1site', fn () => null],
     'too long' => [str_repeat('a', 33), fn () => null],
     'trailing line break' => ["custom\n", fn () => null],
-    'used by another site' => ['taken', fn (Server $server) => Site::factory()->for($server)->isolated('taken')->create()],
+    'used by another site' => ['taken', fn (Server $server) => Site::factory()->for($server)->systemUser('taken')->create()],
     'used by a database user' => ['taken', fn (Server $server) => $server->databaseUsers()->create(['username' => 'taken', 'password' => 'secret', 'status' => ResourceStatus::Installed])],
 ]);
 
@@ -164,31 +164,31 @@ test('sites cannot be reached through another server', function () {
 
 test('installing a site writes its nginx config and a production environment', function () {
     $shell = fakeShell();
-    $site = Site::factory()->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Pending]);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Pending]);
 
     InstallSite::dispatchSync($site, 'example');
 
     expect($site->fresh()->status)->toBe(ResourceStatus::Installed);
 
     $shell->assertRan('server_name example.com;');
-    $shell->assertRan('fastcgi_pass unix:/run/php/php8.5-fpm.sock;');
-    $shell->assertRan('root /home/swage/example.com/current/public;');
+    $shell->assertRan('fastcgi_pass unix:/run/php/php8.5-fpm-example.sock;');
+    $shell->assertRan('root /home/example/example.com/current/public;');
     $shell->assertRan('DB_DATABASE=example');
     $shell->assertRan('APP_ENV=production');
-    $shell->assertRan('REDIS_HOST=127.0.0.1');
+    $shell->assertRan('REDIS_HOST=/run/swage-redis-example/redis.sock');
 });
 
-test('installing an isolated site creates its user and pool and connects as its database user', function () {
+test('installing a site creates its user and pool and connects as its database user', function () {
     $shell = fakeShell();
     $server = Server::factory()->create(['php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
-    $site = Site::factory()->for($server)->isolated('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Pending]);
+    $site = Site::factory()->for($server)->systemUser('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Pending]);
     $databaseUser = $server->databaseUsers()->create(['username' => 'example', 'password' => 'generated-password', 'status' => ResourceStatus::Installed]);
 
     InstallSite::dispatchSync($site, 'example', $databaseUser);
 
     $shell->assertRan("useradd --create-home --user-group --comment 'Swage site' --shell /bin/bash example");
     $shell->assertRan('chmod 750 /home/example');
-    $shell->assertRan('usermod -aG example swage');
+    $shell->assertRan('usermod -aG example www-data');
     $shell->assertRan('visudo -cf /etc/sudoers.d/swage-site-example.new');
     $shell->assertRan("cat > '/etc/php/8.5/fpm/pool.d/example.conf'");
     $shell->assertRan("[example]\nuser = example\ngroup = example\nlisten = /run/php/php8.5-fpm-example.sock");
@@ -200,9 +200,9 @@ test('installing an isolated site creates its user and pool and connects as its 
     $shell->assertRan("DB_DATABASE=example\nDB_USERNAME=example\nDB_PASSWORD=generated-password");
 });
 
-test('an isolated site deploys and runs its workers as its own user', function () {
+test('a site deploys and runs its workers as its own user', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->withRepository()->create();
+    $site = Site::factory()->systemUser('example')->withRepository()->create();
 
     DeploySite::dispatchSync(Deployment::factory()->for($site)->create());
 
@@ -217,10 +217,10 @@ test('an isolated site deploys and runs its workers as its own user', function (
         ->and($site->scheduledJobs()->sole()->user)->toBe('example');
 });
 
-test('changing an isolated site\'s php version moves its pool', function () {
+test('changing a site\'s php version moves its pool', function () {
     $shell = fakeShell();
     $server = Server::factory()->create(['php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
-    $site = Site::factory()->for($server)->isolated('example')->create(['php_version' => PhpVersion::Php85]);
+    $site = Site::factory()->for($server)->systemUser('example')->create(['php_version' => PhpVersion::Php85]);
 
     $site->update(['php_version' => PhpVersion::Php84]);
     UpdateSiteConfiguration::dispatchSync($site);
@@ -230,10 +230,10 @@ test('changing an isolated site\'s php version moves its pool', function () {
     $shell->assertRan('fastcgi_pass unix:/run/php/php8.4-fpm-example.sock;');
 });
 
-test('removing an isolated site removes its pool and user', function () {
+test('removing a site removes its pool and user', function () {
     Http::fake();
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create();
+    $site = Site::factory()->systemUser('example')->create();
 
     RemoveSite::dispatchSync($site);
 
@@ -243,10 +243,10 @@ test('removing an isolated site removes its pool and user', function () {
     expect(Site::find($site->id))->toBeNull();
 });
 
-test('optimizing a server re-tunes its isolated sites\' pools', function () {
+test('optimizing a server re-tunes its sites\' pools', function () {
     $server = Server::factory()->create();
     $tuning = (new ServerTuner)->tune($server->specs(), withMysql: true, withRedis: true);
-    Site::factory()->for($server)->isolated('example')->create();
+    Site::factory()->for($server)->systemUser('example')->create();
 
     $script = Script::render('optimize-server', ['server' => $server, 'tuning' => $tuning]);
 
@@ -255,7 +255,7 @@ test('optimizing a server re-tunes its isolated sites\' pools', function () {
 });
 
 test('the system user of a site cannot be changed', function () {
-    $site = Site::factory()->isolated('example')->create();
+    $site = Site::factory()->systemUser('example')->create();
 
     expect(fn () => $site->update(['system_user' => 'other']))->toThrow(LogicException::class);
 });
@@ -301,7 +301,7 @@ test('removing a site cleans up the server and the site\'s provider', function (
     RemoveSite::dispatchSync($site);
 
     expect($site->fresh())->toBeNull();
-    $shell->assertRan("rm -rf '{$site->path()}'");
+    $shell->assertRan("userdel --remove {$site->system_user}");
     $shell->assertRan('supervisorctl update');
 
     expect($provider->client->calls)->toBe([
@@ -310,13 +310,13 @@ test('removing a site cleans up the server and the site\'s provider', function (
     ]);
 });
 
-test('installing an isolated site refuses to take over an account swage did not create', function () {
-    $site = Site::factory()->isolated('admin')->create();
+test('installing a site refuses to take over an account swage did not create', function () {
+    $site = Site::factory()->systemUser('admin')->create();
 
     $script = Script::render('sites.install', ['site' => $site, 'certificate' => null, 'environment' => '']);
 
     expect($script)
-        ->toContain("if [ \"\$(getent passwd admin | cut -d: -f5)\" != 'Swage site' ] && [ ! -f /etc/sudoers.d/swage-site-admin ]; then")
+        ->toContain("if [ \"\$(getent passwd admin | cut -d: -f5)\" != 'Swage site' ]; then")
         ->toContain('exit 1')
         ->and(strpos($script, 'exit 1'))->toBeLessThan(strpos($script, 'usermod -aG admin'));
 });

@@ -1,7 +1,6 @@
 <?php
 
 use App\Deployments\DeployScript;
-use App\Enums\ConfigService;
 use App\Enums\DatabaseEngine;
 use App\Enums\PhpVersion;
 use App\Models\Certificate;
@@ -11,7 +10,6 @@ use App\Models\DatabaseUser;
 use App\Models\Server;
 use App\Models\Site;
 use App\Provisioning\ServerTuner;
-use App\Provisioning\ServiceConfigFiles;
 use App\Sites\SiteEnvironment;
 use App\Ssh\Script;
 use Illuminate\Support\Facades\File;
@@ -75,10 +73,9 @@ test('postgres database and install scripts are valid bash', function () {
     }
 });
 
-test('site scripts are valid bash', function (bool $isolated) {
+test('site scripts are valid bash', function () {
     $server = Server::factory()->create(['php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
-    $factory = Site::factory()->for($server)->withRepository();
-    $site = ($isolated ? $factory->isolated('example') : $factory)->create(['aliases' => ['www.example.com']]);
+    $site = Site::factory()->for($server)->withRepository()->systemUser('example')->create(['aliases' => ['www.example.com'], 'private_redis' => true]);
     Daemon::factory()->for($site->server)->create(['site_id' => $site->id]);
     $certificate = Certificate::factory()->for($site)->create();
 
@@ -89,33 +86,15 @@ test('site scripts are valid bash', function (bool $isolated) {
     assertValidBash(DeployScript::render($site));
     assertValidBash(Script::render('sites.install-deploy-key', ['site' => $site]));
     assertValidBash(Script::render('sites.write-environment', ['site' => $site, 'environment' => 'APP_NAME=Example', 'delimiter' => 'SWAGE_ENV_X', 'clearConfig' => true]));
-})->with([
-    'shared' => [false],
-    'isolated' => [true],
-]);
+});
 
-test('server upgrade and private redis scripts are valid bash', function () {
-    $server = Server::factory()->upgraded()->create(['php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
-    $server->update(['tuning' => (new ServerTuner)->tune($server->specs(), true, true)->toArray()]);
-    $site = Site::factory()->for($server)->isolated('example')->create(['private_redis' => true]);
-    $configFiles = ServiceConfigFiles::for($server);
+test('server and private redis scripts are valid bash', function () {
+    $server = Server::factory()->create(['php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
+    $site = Site::factory()->for($server)->systemUser('example')->create(['private_redis' => true]);
 
-    assertValidBash(Script::render('upgrades.restrict-sudo', ['isolatedSites' => collect([$site])]));
-    assertValidBash(Script::render('upgrades.separate-nginx-user', [
-        'server' => $server,
-        'nginxFiles' => $configFiles->files(ConfigService::Nginx),
-        'poolFiles' => $configFiles->files(ConfigService::PhpFpmPool),
-        'isolatedSites' => collect([$site]),
-        'sharedDaemons' => collect(),
-    ]));
-    assertValidBash(Script::render('upgrades.rotate-mysql-password', ['password' => 'secret']));
-    assertValidBash(Script::render('upgrades.redis-user', ['password' => 'secret']));
-    assertValidBash(Script::render('upgrades.redis-lockdown', ['files' => $configFiles->files(ConfigService::Redis)]));
     assertValidBash(Script::render('revoke-access', ['publicKey' => 'AAAAkey']));
-    assertValidBash(Script::render('upgrades.automatic-security-updates', ['server' => $server]));
     assertValidBash(Script::render('reboot-required'));
     assertValidBash(Script::render('reboot'));
-    assertValidBash(Script::render('upgrades.root-owned-daemon-logs', ['daemons' => collect([Daemon::factory()->for($server)->create()])]));
     assertValidBash(Script::render('databases.delete', ['database' => Database::factory()->for($server)->make(['name' => 'mysql'])]));
     assertValidBash(Script::render('sites.update-environment', [
         'site' => $site->load('daemons'),
@@ -125,7 +104,7 @@ test('server upgrade and private redis scripts are valid bash', function () {
 });
 
 test('environment values are read and written by the site user', function () {
-    $site = Site::factory()->isolated('example')->create();
+    $site = Site::factory()->systemUser('example')->create();
     $directory = sys_get_temp_dir().'/swage-env-'.Str::random(8);
     mkdir($directory);
     file_put_contents("{$directory}/.env", "APP_NAME=Example\nDB_PASSWORD=old\nREDIS_PASSWORD=secret\n");

@@ -16,7 +16,7 @@ use Livewire\Livewire;
 
 function activeDatabaseServer(array $attributes = []): Server
 {
-    $server = Server::factory()->database()->upgraded()->create(['status' => ServerStatus::Active, ...$attributes]);
+    $server = Server::factory()->database()->create(['status' => ServerStatus::Active, ...$attributes]);
 
     $server->update(['tuning' => (new ServerTuner)->tune($server->specs(), $server->usesMysql(), false, $server->usesPostgres(), withPhp: false)->toArray()]);
 

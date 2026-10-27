@@ -26,6 +26,16 @@ class ServerPolicy
     }
 
     /**
+     * Determine whether the user can run daemons and scheduled jobs as root, and change the config files of the server's
+     * services, which nginx, PHP-FPM, Redis and the databases read as root. Either controls the whole server, so only its
+     * owner may, never its members.
+     */
+    public function runAsRoot(User $user, Server $server): bool
+    {
+        return $this->owns($user, $server);
+    }
+
+    /**
      * Determine whether the user can delete the server.
      */
     public function delete(User $user, Server $server): bool

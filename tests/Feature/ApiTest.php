@@ -218,14 +218,13 @@ test('a site can be created through the API', function () {
     Bus::assertChained([CreateDatabase::class, SyncDatabaseUser::class, InstallSite::class, InstallScheduledJob::class]);
 });
 
-test('sites created through the API are always isolated, named after their domain unless a user is given', function () {
+test('sites created through the API run as a user named after their domain unless one is given', function () {
     Bus::fake();
     $server = Server::factory()->create();
     withApiKey($server->user);
 
-    $this->postJson("/api/v1/servers/{$server->id}/sites", ['domain' => 'shop.example.com', 'isolated' => false])
+    $this->postJson("/api/v1/servers/{$server->id}/sites", ['domain' => 'shop.example.com'])
         ->assertCreated()
-        ->assertJsonPath('data.isolated', true)
         ->assertJsonPath('data.system_user', 'shop_example');
 });
 
@@ -495,6 +494,19 @@ test('only a key given the root ability can make daemons and scheduled jobs run 
 
     $this->postJson("/api/v1/servers/{$server->id}/daemons", ['command' => 'php worker.php', 'user' => 'root'])->assertCreated();
     $this->postJson("/api/v1/servers/{$server->id}/scheduled-jobs", ['command' => 'php backup.php', 'user' => 'root'])->assertCreated();
+});
+
+test('only the server\'s owner can make daemons and scheduled jobs run as root, whatever their key allows', function () {
+    Queue::fake();
+    $server = Server::factory()->create();
+    withApiKey(apiMember($server, MemberRole::Manager), ['daemons:read', 'daemons:write', 'root']);
+
+    $this->postJson("/api/v1/servers/{$server->id}/daemons", ['command' => 'php worker.php', 'user' => 'root'])->assertForbidden();
+    $this->postJson("/api/v1/servers/{$server->id}/scheduled-jobs", ['command' => 'php backup.php', 'user' => 'root'])->assertForbidden();
+    $this->postJson("/api/v1/servers/{$server->id}/daemons", ['command' => 'php worker.php'])->assertCreated();
+
+    expect($server->daemons()->where('user', 'root')->exists())->toBeFalse()
+        ->and($server->scheduledJobs()->exists())->toBeFalse();
 });
 
 test('full access does not include running commands as root', function () {

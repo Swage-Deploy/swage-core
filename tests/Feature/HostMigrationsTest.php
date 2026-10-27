@@ -58,7 +58,6 @@ test('host scripts are valid bash', function () {
         resource_path('scripts/host/swage-host-migrate'),
         resource_path('scripts/host/migrate.sh'),
         resource_path('scripts/host/lib.sh'),
-        resource_path('scripts/host/adopt-swage.sh'),
         ...collect(hostMigrations())->map(fn ($name) => resource_path("scripts/host/migrations/{$name}")),
     ];
 
@@ -67,16 +66,6 @@ test('host scripts are valid bash', function () {
 
         expect($result->successful())->toBeTrue("{$script}: {$result->errorOutput()}");
     }
-});
-
-test('adopting an existing install keeps its database password', function () {
-    $adopt = File::get(resource_path('scripts/host/adopt-swage.sh'));
-    $mysql = File::get(resource_path('scripts/host/migrations/2026_10_14_000004_mysql.sh'));
-
-    expect($adopt)->toContain('echo "DB_PASSWORD=$DB_PASSWORD" >> /etc/swage/secrets.env')
-        ->and($mysql)->toContain('$(swage_secret DB_PASSWORD)');
-
-    expect(strpos($adopt, '/etc/swage/secrets.env'))->toBeLessThan(strpos($adopt, '/usr/local/sbin/swage-host-migrate "$('));
 });
 
 test('nginx configs stay compatible with the nginx 1.24 shipped by ubuntu 24.04', function () {

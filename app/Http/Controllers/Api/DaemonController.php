@@ -31,8 +31,12 @@ class DaemonController extends Controller
     {
         Gate::authorize('update', $server);
 
-        // Only a key given the root ability can make something run as root, which controls the whole server.
-        abort_if($request->input('user') === 'root' && ! $request->user()->tokenCan(ApiAbility::Root->value), Response::HTTP_FORBIDDEN, __('This API key cannot run commands as root. Create a key with "Run commands as root" for that.'));
+        // Only the server's owner, with a key given the root ability, can make something run as root, which controls the
+        // whole server.
+        if ($request->input('user') === 'root') {
+            Gate::authorize('runAsRoot', $server);
+            abort_unless($request->user()->tokenCan(ApiAbility::Root->value), Response::HTTP_FORBIDDEN, __('This API key cannot run commands as root. Create a key with "Run commands as root" for that.'));
+        }
 
         $daemon = $createDaemon->handle($server, [
             'user' => config('swage.user'),

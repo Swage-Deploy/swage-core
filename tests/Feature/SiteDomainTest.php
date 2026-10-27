@@ -14,7 +14,7 @@ use Livewire\Livewire;
 
 test('changing the domain keeps the old one as an alias and leaves the site\'s files where they are', function () {
     Bus::fake();
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com', 'aliases' => ['www.example.com']]);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com', 'aliases' => ['www.example.com']]);
 
     Livewire::actingAs($site->server->user)->test('pages::sites.settings', ['server' => $site->server, 'site' => $site])
         ->set('domain', 'Example.org')
@@ -109,7 +109,7 @@ test('viewers cannot change the domain', function () {
 
 test('nginx answers to the new domain under the site\'s original names, and APP_URL follows it', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com']);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com']);
     $site->update(['domain' => 'example.org', 'aliases' => ['example.com']]);
     Certificate::factory()->for($site)->create(['domains' => ['example.com'], 'status' => ResourceStatus::Installed]);
 

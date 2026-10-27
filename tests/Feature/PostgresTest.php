@@ -266,7 +266,7 @@ test('a postgres server offers postgres config and logs instead of mysql', funct
 });
 
 test('the server page lists the installed engines and offers the missing ones', function () {
-    $server = Server::factory()->pgvector()->upgraded()->create(['status' => ServerStatus::Active]);
+    $server = Server::factory()->pgvector()->create(['status' => ServerStatus::Active]);
 
     $this->actingAs($server->user)->get(route('servers.show', $server))
         ->assertSee('PostgreSQL 16 + pgvector')
@@ -277,7 +277,7 @@ test('the server page lists the installed engines and offers the missing ones', 
 
 test('mysql can be installed later and the server is re-tuned to share memory with it', function () {
     $shell = fakeShell()->respondTo('SWAGE_CPU_CORES', new ScriptResult(0, "SWAGE_CPU_CORES 4\nSWAGE_MEMORY_MB 8192\nSWAGE_DISK_GB 160"));
-    $server = Server::factory()->postgres()->upgraded()->create(['status' => ServerStatus::Active]);
+    $server = Server::factory()->postgres()->create(['status' => ServerStatus::Active]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->call('installDatabaseEngine', 'mysql');
@@ -295,22 +295,21 @@ test('mysql can be installed later and the server is re-tuned to share memory wi
     expect($shell->lastScript())->toContain('systemctl restart mysql')->toContain('systemctl restart postgresql');
 });
 
-test('postgres installed later gets the php driver on every php version', function () {
+test('postgres can be installed on a running server', function () {
     $shell = fakeShell()->respondTo('SWAGE_CPU_CORES', new ScriptResult(0, "SWAGE_CPU_CORES 2\nSWAGE_MEMORY_MB 4096\nSWAGE_DISK_GB 80"));
-    $server = Server::factory()->upgraded()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php84, PhpVersion::Php85]]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->call('installDatabaseEngine', 'postgres');
 
     expect($server->refresh()->databaseEngines())->toBe([DatabaseEngine::Mysql, DatabaseEngine::Postgres]);
 
-    $shell->assertRan('apt-get install -yq php8.4-pgsql php8.5-pgsql');
     $shell->assertRan("ALTER ROLE \"swage\" WITH LOGIN SUPERUSER PASSWORD '{$server->database_password}';");
 });
 
 test('an engine the server already runs cannot be installed again', function () {
     Queue::fake();
-    $server = Server::factory()->upgraded()->create(['status' => ServerStatus::Active]);
+    $server = Server::factory()->create(['status' => ServerStatus::Active]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->call('installDatabaseEngine', 'mysql')
@@ -321,7 +320,7 @@ test('an engine the server already runs cannot be installed again', function () 
 
 test('only one database install runs on a server at a time', function () {
     Queue::fake();
-    $server = Server::factory()->upgraded()->create(['status' => ServerStatus::Active, 'installing_database' => 'postgres', 'has_mysql' => false]);
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'installing_database' => 'postgres', 'has_mysql' => false]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->call('installDatabaseEngine', 'mysql');
@@ -332,7 +331,7 @@ test('only one database install runs on a server at a time', function () {
 
 test('a failed install can be tried again', function () {
     fakeShell()->respondTo('apt-get install -yq mysql-server', new ScriptResult(100, 'E: Unable to locate package'));
-    $server = Server::factory()->postgres()->upgraded()->create(['status' => ServerStatus::Active]);
+    $server = Server::factory()->postgres()->create(['status' => ServerStatus::Active]);
 
     rescue(fn () => Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])->call('installDatabaseEngine', 'mysql'), report: false);
 
@@ -343,7 +342,7 @@ test('a failed install can be tried again', function () {
 
 test('pgvector can be added later and is enabled in existing postgres databases only', function () {
     $shell = fakeShell();
-    $server = Server::factory()->postgres()->upgraded()->create(['status' => ServerStatus::Active, 'has_mysql' => true]);
+    $server = Server::factory()->postgres()->create(['status' => ServerStatus::Active, 'has_mysql' => true]);
     Database::factory()->for($server)->postgres()->create(['name' => 'shop']);
     Database::factory()->for($server)->create(['name' => 'legacy']);
 
@@ -359,7 +358,7 @@ test('pgvector can be added later and is enabled in existing postgres databases 
 
 test('pgvector cannot be added to a server without postgres', function () {
     Queue::fake();
-    $server = Server::factory()->upgraded()->create(['status' => ServerStatus::Active]);
+    $server = Server::factory()->create(['status' => ServerStatus::Active]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->call('installPgvector')

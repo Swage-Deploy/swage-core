@@ -34,14 +34,13 @@ mkdir -p "$PHP_SHIM"
 ln -sf "/usr/bin/$SWAGE_PHP" "$PHP_SHIM/php"
 export PATH="$PHP_SHIM:$PATH"
 
-# Swage's sudo helpers only act on this PHP version and this user's own workers. Servers that have not
-# had the sudo upgrade yet fall back to the rules they were provisioned with.
+# Swage's sudo helpers only act on this PHP version and this user's own workers.
 swage_reload_php() {
-    sudo -n /usr/local/sbin/swage-reload-php '{!! $site->php_version->value !!}' 2> /dev/null || sudo -n service "$SWAGE_PHP_FPM" reload
+    sudo -n /usr/local/sbin/swage-reload-php '{!! $site->php_version->value !!}'
 }
 
 swage_restart_daemon() {
-    sudo -n /usr/local/sbin/swage-restart-daemon "$1" 2> /dev/null || sudo -n supervisorctl restart "daemon-$1:*"
+    sudo -n /usr/local/sbin/swage-restart-daemon "$1"
 }
 
 cd "$SWAGE_SITE_PATH"

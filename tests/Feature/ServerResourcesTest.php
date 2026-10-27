@@ -1,5 +1,6 @@
 <?php
 
+use App\Enums\DatabaseEngine;
 use App\Enums\ResourceStatus;
 use App\Jobs\InstallDaemon;
 use App\Jobs\InstallScheduledJob;
@@ -192,6 +193,23 @@ test('system databases are never dropped or granted, even when a record for one 
         ->toContain('ON `shop`.*')
         ->not->toContain('ON `mysql`.*');
 });
+
+test('database users only change or drop accounts swage created', function (DatabaseEngine $engine) {
+    $user = DatabaseUser::factory()->for(Server::factory()->create(['has_postgres' => true]))->create(['username' => 'shop_user', 'engine' => $engine]);
+
+    $sync = Script::render('databases.sync-user', ['databaseUser' => $user->load('databases')]);
+    $delete = Script::render('databases.delete-user', ['databaseUser' => $user]);
+
+    expect($sync)->toContain("'Managed by Swage'")->toContain('already exists and was not created by Swage')
+        ->and($delete)->toContain("= 'Managed by Swage' ]");
+
+    if ($engine === DatabaseEngine::Mysql) {
+        expect(strpos($sync, 'exit 1'))->toBeLessThan(strpos($sync, 'ALTER USER'))
+            ->and($sync)->toContain("IDENTIFIED BY '{$user->password}' COMMENT 'Managed by Swage';");
+    } else {
+        expect(strpos($sync, 'RAISE EXCEPTION'))->toBeLessThan(strpos($sync, 'ALTER ROLE'));
+    }
+})->with([DatabaseEngine::Mysql, DatabaseEngine::Postgres]);
 
 test('an existing database user cannot be renamed', function () {
     $shell = fakeShell();

@@ -58,8 +58,8 @@ chown -R {!! $server->webUser() !!}:{!! $server->webUser() !!} /var/lib/nginx
 @include('scripts.partials.write-files', ['files' => $configFiles->files(App\Enums\ConfigService::PhpFpmPool)])
 @include('scripts.partials.write-files', ['files' => $configFiles->files(App\Enums\ConfigService::PhpFpmIni)])
 @include('scripts.partials.write-files', ['files' => $configFiles->files(App\Enums\ConfigService::PhpCliIni)])
-@foreach ($server->sites()->whereNotNull('system_user')->get() as $isolatedSite)
-@include('scripts.partials.write-files', ['files' => (new App\Sites\SitePhpPool($isolatedSite, $tuning))->files()])
+@foreach ($server->sites()->get() as $site)
+@include('scripts.partials.write-files', ['files' => (new App\Sites\SitePhpPool($site, $tuning))->files()])
 @endforeach
 @endif
 

@@ -10,9 +10,9 @@ use App\Ssh\Script;
 use App\Ssh\ScriptResult;
 use Livewire\Livewire;
 
-test('an isolated site\'s php settings are written to its pool and nginx', function () {
+test('a site\'s php settings are written to its pool and nginx', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Installed]);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Installed]);
 
     Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
         ->set('memory_limit', '1g')
@@ -45,7 +45,7 @@ test('an isolated site\'s php settings are written to its pool and nginx', funct
 
 test('clearing every php setting goes back to the server\'s', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['status' => ResourceStatus::Installed, 'php_settings' => ['memory_limit' => '1G']]);
+    $site = Site::factory()->systemUser('example')->create(['status' => ResourceStatus::Installed, 'php_settings' => ['memory_limit' => '1G']]);
 
     Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
         ->assertSet('memory_limit', '1G')
@@ -58,14 +58,14 @@ test('clearing every php setting goes back to the server\'s', function () {
 });
 
 test('a short execution time leaves nginx\'s timeout alone', function () {
-    $site = Site::factory()->isolated('example')->create(['php_settings' => ['max_execution_time' => 30]]);
+    $site = Site::factory()->systemUser('example')->create(['php_settings' => ['max_execution_time' => 30]]);
 
     expect(Script::render('sites.nginx', ['site' => $site, 'certificate' => null]))->not->toContain('fastcgi_read_timeout');
 });
 
 test('php settings that cannot go in the pool config are rejected', function (string $field, string $value) {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['status' => ResourceStatus::Installed]);
+    $site = Site::factory()->systemUser('example')->create(['status' => ResourceStatus::Installed]);
 
     Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
         ->set($field, $value)
@@ -87,7 +87,7 @@ test('php settings that cannot go in the pool config are rejected', function (st
 
 test('rejected php settings keep the previous ones', function () {
     fakeShell()->respondTo('php-fpm8.5 -t', new ScriptResult(1, "ERROR: failed to load configuration file\nRestoring the previous configuration."));
-    $site = Site::factory()->isolated('example')->create(['status' => ResourceStatus::Installed, 'php_settings' => ['memory_limit' => '1G']]);
+    $site = Site::factory()->systemUser('example')->create(['status' => ResourceStatus::Installed, 'php_settings' => ['memory_limit' => '1G']]);
 
     Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
         ->set('memory_limit', '2G')
@@ -97,10 +97,10 @@ test('rejected php settings keep the previous ones', function () {
     expect($site->fresh()->php_settings)->toBe(['memory_limit' => '1G']);
 });
 
-test('php settings are only offered to sites with a pool of their own', function (array $attributes) {
+test('php settings are not offered to octane sites, which serve requests themselves', function () {
     $shell = fakeShell();
     $server = Server::factory()->create();
-    $site = Site::factory()->for($server)->inPlace()->create(['status' => ResourceStatus::Installed, ...$attributes]);
+    $site = Site::factory()->for($server)->inPlace()->create(['status' => ResourceStatus::Installed, 'octane' => true, 'octane_port' => 8001]);
 
     Livewire::actingAs($server->user)->test('pages::sites.php', ['server' => $server, 'site' => $site])
         ->assertSee('come from the server')
@@ -109,14 +109,11 @@ test('php settings are only offered to sites with a pool of their own', function
 
     $shell->assertNothingRan();
     expect($site->fresh()->php_settings)->toBeNull();
-})->with([
-    'shared pool' => [[]],
-    'octane' => [['system_user' => 'example', 'octane' => true, 'octane_port' => 8001]],
-]);
+});
 
 test('php settings can only be applied to an installed site', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['status' => ResourceStatus::Installing]);
+    $site = Site::factory()->systemUser('example')->create(['status' => ResourceStatus::Installing]);
 
     Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
         ->set('memory_limit', '1G')
@@ -127,7 +124,7 @@ test('php settings can only be applied to an installed site', function () {
 
 test('php settings are kept when swage rewrites the site\'s pool', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['php_settings' => ['upload_max_filesize' => '1G']]);
+    $site = Site::factory()->systemUser('example')->create(['php_settings' => ['upload_max_filesize' => '1G']]);
 
     UpdateSiteConfiguration::dispatchSync($site);
 
@@ -139,13 +136,13 @@ test('php settings are kept when swage rewrites the site\'s pool', function () {
 });
 
 test('php settings on another user\'s server cannot be changed', function () {
-    $site = Site::factory()->isolated('example')->create(['status' => ResourceStatus::Installed]);
+    $site = Site::factory()->systemUser('example')->create(['status' => ResourceStatus::Installed]);
 
     Livewire::actingAs(Server::factory()->create()->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])->assertForbidden();
 });
 
 test('php settings have their own tab beside nginx', function () {
-    $site = Site::factory()->isolated('example')->create(['php_settings' => ['memory_limit' => '1G']]);
+    $site = Site::factory()->systemUser('example')->create(['php_settings' => ['memory_limit' => '1G']]);
 
     $this->actingAs($site->server->user)
         ->get(route('servers.sites.php', [$site->server, $site]))

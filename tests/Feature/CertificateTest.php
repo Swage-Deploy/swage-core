@@ -14,7 +14,7 @@ use Livewire\Livewire;
 
 test('obtaining a certificate switches the site\'s APP_URL to https', function () {
     $shell = fakeShell()->respondTo('certbot certonly', new ScriptResult(0, 'SWAGE_EXPIRES Jan 13 12:00:00 2027 GMT'));
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com', 'aliases' => ['www.example.com']]);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com', 'aliases' => ['www.example.com']]);
     $certificate = Certificate::factory()->for($site)->create(['domains' => ['example.com', 'www.example.com'], 'status' => ResourceStatus::Pending]);
 
     ObtainCertificate::dispatchSync($certificate);

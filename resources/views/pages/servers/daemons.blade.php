@@ -49,6 +49,10 @@ new class extends Component {
     {
         $this->authorize('update', $this->server);
 
+        if ($this->user === 'root') {
+            $this->authorize('runAsRoot', $this->server);
+        }
+
         $createDaemon->handle($this->server, $this->only(['command', 'directory', 'user', 'processes', 'stop_wait_seconds']));
 
         $this->reset('command', 'directory', 'processes', 'stop_wait_seconds');
@@ -90,12 +94,13 @@ new class extends Component {
             <form wire:submit="create" class="flex flex-col gap-6">
                 <flux:heading size="lg">{{ __('New daemon') }}</flux:heading>
 
-                <flux:input wire:model="command" :label="__('Command')" placeholder="php8.5 /home/swage/example.com/current/artisan reverb:start" class="font-mono" required />
-                <flux:input wire:model="directory" :label="__('Directory')" placeholder="/home/swage/example.com/current" />
+                <flux:input wire:model="command" :label="__('Command')" placeholder="php8.5 /home/example/example.com/current/artisan reverb:start" class="font-mono" required />
+                <flux:input wire:model="directory" :label="__('Directory')" placeholder="/home/example/example.com/current" />
 
                 <div class="grid grid-cols-3 gap-4">
                     <flux:select wire:model="user" :label="__('User')">
                         @foreach ($server->systemUsers() as $systemUser)
+                            @continue($systemUser === 'root' && auth()->user()->cannot('runAsRoot', $server))
                             <flux:select.option :value="$systemUser">{{ $systemUser }}</flux:select.option>
                         @endforeach
                     </flux:select>

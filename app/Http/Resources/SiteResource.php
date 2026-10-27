@@ -26,7 +26,6 @@ class SiteResource extends JsonResource
             'status' => $this->status,
             'web_directory' => $this->web_directory,
             'php_version' => $this->php_version,
-            'isolated' => $this->isIsolated(),
             'system_user' => $this->systemUser(),
             'zero_downtime' => $this->zero_downtime,
             'octane' => $this->octane,

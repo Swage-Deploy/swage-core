@@ -27,8 +27,7 @@ class CreateSite
     /**
      * Validate a site's details as the user entered them, then create it.
      *
-     * Every new site is isolated: it runs as a Linux user of its own, named after its domain unless one is given. Sites
-     * sharing Swage's user can reach each other's files, so they are no longer created.
+     * Every site runs as a Linux user of its own, named after its domain unless one is given.
      *
      * @param  array<string, mixed>  $input
      *
@@ -104,10 +103,10 @@ class CreateSite
     /**
      * Create a site, optionally with its own database, database user and Laravel scheduler, and install it on the server.
      *
-     * An isolated site's database user shares its system user's name; otherwise it is named after the database. The
-     * database is always a new one, never one that already exists on the server.
+     * The site's database user shares its system user's name. The database is always a new one, never one that already
+     * exists on the server.
      *
-     * @param  array{domain: string, system_user: ?string, aliases: list<string>, web_directory: string, php_version: string, zero_downtime: bool, database: ?string, database_engine: ?DatabaseEngine, scheduler: bool}  $attributes
+     * @param  array{domain: string, system_user: string, aliases: list<string>, web_directory: string, php_version: string, zero_downtime: bool, database: ?string, database_engine: ?DatabaseEngine, scheduler: bool}  $attributes
      */
     public function handle(Server $server, array $attributes): Site
     {
@@ -115,8 +114,8 @@ class CreateSite
         [$site, $jobs] = DB::transaction(function () use ($server, $attributes): array {
             $site = $server->sites()->create([
                 'domain' => $attributes['domain'],
-                'system_user' => $attributes['system_user'] ?: null,
-                'private_redis' => filled($attributes['system_user']) && $server->has_redis,
+                'system_user' => $attributes['system_user'],
+                'private_redis' => $server->has_redis,
                 'aliases' => $attributes['aliases'],
                 'web_directory' => $attributes['web_directory'],
                 'php_version' => $attributes['php_version'],
@@ -143,7 +142,7 @@ class CreateSite
 
                 $databaseUser = $server->databaseUsers()->create([
                     'engine' => $engine,
-                    'username' => $site->system_user ?? $databaseName,
+                    'username' => $site->system_user,
                     'password' => Str::random(40),
                     'status' => ResourceStatus::Pending,
                 ]);

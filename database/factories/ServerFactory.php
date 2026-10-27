@@ -7,7 +7,6 @@ use App\Enums\ServerStatus;
 use App\Enums\ServerType;
 use App\Models\Server;
 use App\Models\User;
-use App\Provisioning\ServerUpgrades;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Str;
 
@@ -41,20 +40,10 @@ class ServerFactory extends Factory
             'ssh_private_key' => 'fake-private-key',
             'ssh_public_key' => 'ssh-ed25519 AAAAfake swage',
             'database_password' => Str::password(32, symbols: false),
-            'provisioned_at' => now(),
-        ];
-    }
-
-    /**
-     * Indicate that the server was provisioned with every upgrade already in place, as new servers are.
-     */
-    public function upgraded(): static
-    {
-        return $this->state(fn (array $attributes) => [
-            'applied_upgrades' => ServerUpgrades::ids(),
             'redis_password' => Str::password(40, symbols: false),
             'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHostKeyForTests',
-        ]);
+            'provisioned_at' => now(),
+        ];
     }
 
     /**

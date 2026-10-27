@@ -6,7 +6,7 @@ use App\Models\Site;
 use Illuminate\Validation\ValidationException;
 
 /**
- * The PHP settings an isolated site's web requests run with, on top of the server's php.ini.
+ * The PHP settings a site's web requests run with, on top of the server's php.ini.
  *
  * They are written into the site's PHP-FPM pool as php_value lines, so the application can still raise them with
  * ini_set(). Queue workers and the scheduler run on the command line and keep the server's settings.

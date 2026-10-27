@@ -1,14 +1,13 @@
 set -Eeuo pipefail
 
 SITE_PATH='{!! $site->path() !!}'
-@if ($site->isIsolated())
 @php($siteUser = $site->system_user)
 
 # {!! $site->domain !!} runs as its own user. Its home is closed to other sites; only nginx joins its group to serve its files.
 # Only an account Swage created for a site is reused. Any other account, such as a cloud image's sudo user, would hand
 # the site that account's access.
 if id {!! $siteUser !!} > /dev/null 2>&1; then
-    if [ "$(getent passwd {!! $siteUser !!} | cut -d: -f5)" != '{!! App\Sites\SiteSystemUser::ACCOUNT_COMMENT !!}' ] && [ ! -f /etc/sudoers.d/swage-site-{!! $siteUser !!} ]; then
+    if [ "$(getent passwd {!! $siteUser !!} | cut -d: -f5)" != '{!! App\Sites\SiteSystemUser::ACCOUNT_COMMENT !!}' ]; then
         echo "The user {!! $siteUser !!} already exists on this server. Create the site with another system user." >&2
         exit 1
     fi
@@ -28,9 +27,6 @@ chmod 700 /home/{!! $siteUser !!}/.ssh
 @if ($site->private_redis)
 
 @include('scripts.sites.private-redis')
-@endif
-@else
-@php($siteUser = $user)
 @endif
 
 sudo -u {!! $siteUser !!} mkdir -p "$SITE_PATH/releases" \

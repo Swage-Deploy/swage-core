@@ -183,19 +183,12 @@ class Site extends Model
     }
 
     /**
-     * Determine if the site runs as its own system user, walled off from the server's other sites.
-     */
-    public function isIsolated(): bool
-    {
-        return filled($this->system_user);
-    }
-
-    /**
-     * Get the system user that owns the site's files and runs its PHP, deployments, workers and scheduler.
+     * Get the system user that owns the site's files and runs its PHP, deployments, workers and scheduler. Each site
+     * has a user of its own, walled off from the server's other sites.
      */
     public function systemUser(): string
     {
-        return $this->system_user ?: config('swage.user');
+        return $this->system_user;
     }
 
     /**
@@ -224,14 +217,6 @@ class Site extends Model
     }
 
     /**
-     * Determine if the site can be moved onto a Redis server of its own.
-     */
-    public function supportsPrivateRedis(): bool
-    {
-        return $this->isIsolated() && $this->server->has_redis;
-    }
-
-    /**
      * Get the unix socket of the site's private Redis server, which only the site's user can reach.
      */
     public function redisSocket(): string
@@ -240,19 +225,16 @@ class Site extends Model
     }
 
     /**
-     * Get the PHP-FPM socket nginx passes the site's requests to.
-     *
-     * Isolated sites get a pool of their own, so their code runs as their own user.
+     * Get the PHP-FPM socket nginx passes the site's requests to. Each site has a pool of its own, so its code runs as
+     * its own user.
      */
     public function fpmSocket(): string
     {
-        return $this->isIsolated()
-            ? "/run/php/php{$this->php_version->value}-fpm-{$this->system_user}.sock"
-            : $this->php_version->fpmSocket();
+        return "/run/php/php{$this->php_version->value}-fpm-{$this->system_user}.sock";
     }
 
     /**
-     * Get the path of an isolated site's PHP-FPM pool config for a PHP version.
+     * Get the path of the site's PHP-FPM pool config for a PHP version.
      */
     public function fpmPoolPath(PhpVersion $phpVersion): string
     {

@@ -20,6 +20,11 @@ class DatabaseUser extends Model
     use HasFactory;
 
     /**
+     * The comment Swage gives the accounts it creates, so it never changes or drops an account it did not create.
+     */
+    public const string ACCOUNT_COMMENT = 'Managed by Swage';
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

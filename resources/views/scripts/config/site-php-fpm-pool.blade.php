@@ -1,4 +1,4 @@
-; Managed by Swage: the isolated pool for {!! $site->domain !!}
+; Managed by Swage: the pool for {!! $site->domain !!}
 [{!! $site->system_user !!}]
 user = {!! $site->system_user !!}
 group = {!! $site->system_user !!}

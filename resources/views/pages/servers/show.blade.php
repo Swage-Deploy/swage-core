@@ -7,9 +7,7 @@ use App\Jobs\InstallDatabaseEngine;
 use App\Jobs\InstallPgvector;
 use App\Jobs\OptimizeServer;
 use App\Jobs\RebootServer;
-use App\Jobs\UpgradeServer;
 use App\Models\Certificate;
-use App\Provisioning\Upgrades\ServerUpgrade;
 use App\Models\Server;
 use App\Provisioning\ServerTuning;
 use Flux\Flux;
@@ -40,17 +38,6 @@ new class extends Component {
     }
 
     /**
-     * Upgrades the server needs to match how Swage provisions servers today.
-     *
-     * @return array<string, ServerUpgrade>
-     */
-    #[Computed]
-    public function pendingUpgrades(): array
-    {
-        return $this->server->isActive() ? $this->server->pendingUpgrades() : [];
-    }
-
-    /**
      * Certificates on the server's sites that certbot should have renewed by now.
      *
      * @return Collection<int, Certificate>
@@ -63,18 +50,6 @@ new class extends Component {
             ->with('site')
             ->orderBy('expires_at')
             ->get();
-    }
-
-    /**
-     * Apply every pending upgrade in the background.
-     */
-    public function applyUpgrades(): void
-    {
-        $this->authorize('update', $this->server);
-
-        UpgradeServer::dispatch($this->server);
-
-        Flux::toast(variant: 'success', text: __('Upgrading the server. Follow along in the activity log.'));
     }
 
     /**
@@ -240,23 +215,6 @@ new class extends Component {
                         <div class="h-full w-1/3 animate-[ember-slide_1.6s_ease-in-out_infinite] bg-linear-to-r from-transparent via-ember-500 to-transparent"></div>
                     </div>
                 </div>
-            @endif
-
-            @if ($this->pendingUpgrades !== [])
-                <x-panel icon="shield-check" :heading="__('Security upgrades available')" :description="__('This server was provisioned before these changes. New servers already have them. Each upgrade keeps your sites running, and anything you should know is noted below.')">
-                    <x-slot:actions>
-                        <flux:button size="sm" variant="primary" icon="arrow-up-circle" wire:click="applyUpgrades">{{ __('Apply upgrades') }}</flux:button>
-                    </x-slot:actions>
-
-                    <ul class="flex flex-col gap-3 text-sm">
-                        @foreach ($this->pendingUpgrades as $upgrade)
-                            <li>
-                                <flux:heading size="sm">{{ $upgrade->title() }}</flux:heading>
-                                <flux:text class="mt-0.5">{{ $upgrade->description() }}</flux:text>
-                            </li>
-                        @endforeach
-                    </ul>
-                </x-panel>
             @endif
 
             @if ($this->overdueCertificates->isNotEmpty())

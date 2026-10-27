@@ -26,6 +26,7 @@ class SiteFactory extends Factory
         return [
             'server_id' => Server::factory(),
             'domain' => fake()->unique()->domainName(),
+            'system_user' => 'site_'.fake()->unique()->numberBetween(1, 99999),
             'aliases' => [],
             'web_directory' => '/public',
             'php_version' => PhpVersion::Php85,
@@ -46,12 +47,12 @@ class SiteFactory extends Factory
     }
 
     /**
-     * Indicate that the site runs as its own system user.
+     * Indicate the name of the site's system user.
      */
-    public function isolated(?string $systemUser = null): static
+    public function systemUser(string $systemUser): static
     {
         return $this->state(fn (array $attributes) => [
-            'system_user' => $systemUser ?? 'site_'.fake()->unique()->numberBetween(1, 99999),
+            'system_user' => $systemUser,
         ]);
     }
 

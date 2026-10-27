@@ -48,15 +48,27 @@ test('new users need a name and an unused email address', function () {
     usersPage()->call('add')->set('name', '')->set('email', $existing->email)->call('save')->assertHasErrors(['name', 'email']);
 });
 
-test('administrators reset a user\'s password', function () {
+test('administrators reset a user\'s password, which revokes their api keys', function () {
     $user = User::factory()->create(['remember_token' => 'remembered']);
+    $user->createToken('ci', ['servers:read']);
 
     $password = usersPage()->call('resetPassword', $user->id)->assertSet('generatedFor', $user->email)->get('generatedPassword');
 
     $user->refresh();
 
     expect(Hash::check($password, $user->password))->toBeTrue()
-        ->and($user->remember_token)->not->toBe('remembered');
+        ->and($user->remember_token)->not->toBe('remembered')
+        ->and($user->tokens()->count())->toBe(0);
+});
+
+test('a changed password signs out every other session', function () {
+    $user = User::factory()->create();
+
+    $this->actingAs($user)->get(route('dashboard'))->assertOk();
+
+    $user->forceFill(['password' => 'a-new-password-1234'])->save();
+
+    $this->get(route('dashboard'))->assertRedirect(route('login'));
 });
 
 test('administrators reset a user\'s two-factor authentication', function () {

@@ -65,27 +65,15 @@ class SiteEnvironment
     }
 
     /**
-     * The Redis connection settings for a site: its private server's socket, or the shared server with the
-     * password Swage gives shared sites once the server requires one.
+     * The Redis connection settings for a site: its private server's socket, which only its user can reach.
      *
      * @return array<string, string>
      */
     public static function redis(Site $site): array
     {
-        if ($site->private_redis) {
-            return [
-                'REDIS_HOST' => $site->redisSocket(),
-                'REDIS_PORT' => '0',
-            ];
-        }
-
         return [
-            'REDIS_HOST' => '127.0.0.1',
-            'REDIS_PORT' => '6379',
-            ...($site->server->usesRedisAuthentication() ? [
-                'REDIS_USERNAME' => config('swage.user'),
-                'REDIS_PASSWORD' => $site->server->redis_password,
-            ] : []),
+            'REDIS_HOST' => $site->redisSocket(),
+            'REDIS_PORT' => '0',
         ];
     }
 

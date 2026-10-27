@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Bus;
 use Livewire\Livewire;
 
 test('a site lists its laravel, scheduler, worker, nginx and php logs', function () {
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'private_redis' => true]);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com', 'php_version' => PhpVersion::Php85, 'private_redis' => true]);
     $scheduler = $site->server->scheduledJobs()->create([
         'site_id' => $site->id, 'command' => SiteCommands::scheduler($site), 'user' => 'example', 'frequency' => '* * * * *', 'status' => ResourceStatus::Installed,
     ]);
@@ -25,7 +25,7 @@ test('a site lists its laravel, scheduler, worker, nginx and php logs', function
     expect($logs->all())->toBe([
         'Laravel' => '/home/example/example.com/shared/storage/logs/laravel*.log',
         'Scheduler' => "/home/example/.swage/scheduled-job-{$scheduler->id}.log",
-        "Queue worker #{$worker->id}" => "/home/swage/.swage/daemon-{$worker->id}.log",
+        "Queue worker #{$worker->id}" => "/var/log/swage/daemon-{$worker->id}.log",
         'nginx access' => '/var/log/nginx/example.com-access.log',
         'nginx errors' => '/var/log/nginx/example.com-error.log',
         'PHP 8.5 FPM' => '/var/log/php8.5-fpm.log',
@@ -34,7 +34,7 @@ test('a site lists its laravel, scheduler, worker, nginx and php logs', function
 });
 
 test('a site deployed in place shows the laravel log from its checkout', function () {
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com', 'zero_downtime' => false]);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com', 'zero_downtime' => false]);
 
     expect(LogFiles::find(LogFiles::forSite($site), 'laravel')->location())
         ->toBe('/home/example/example.com/current/storage/logs/laravel*.log');
@@ -53,7 +53,7 @@ test('a server lists its service, process and system logs', function () {
         '/var/log/mysql/error.log',
         '/var/log/redis/redis-server.log',
         '/var/log/supervisor/supervisord.log',
-        "/home/swage/.swage/daemon-{$daemon->id}.log",
+        "/var/log/swage/daemon-{$daemon->id}.log",
         '/var/log/syslog',
         '/var/log/auth.log',
     );
@@ -84,20 +84,20 @@ test('a site\'s laravel log is shown with secrets masked', function () {
 });
 
 test('logs a site\'s user can write to are read as that user, so a link in their place cannot make root read another file', function () {
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com']);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com']);
     $scheduler = $site->server->scheduledJobs()->create([
         'site_id' => $site->id, 'command' => SiteCommands::scheduler($site), 'user' => 'example', 'frequency' => '* * * * *', 'status' => ResourceStatus::Installed,
     ]);
     $rootJob = $site->server->scheduledJobs()->create([
         'site_id' => $site->id, 'command' => 'true', 'user' => 'root', 'frequency' => '* * * * *', 'status' => ResourceStatus::Installed,
     ]);
-    $legacyWorker = Daemon::factory()->for($site->server)->create(['site_id' => $site->id, 'user' => 'example']);
+    $worker = Daemon::factory()->for($site->server)->create(['site_id' => $site->id, 'user' => 'example']);
     $logs = collect(LogFiles::forSite($site))->keyBy('key');
 
     expect($logs['laravel']->readAs)->toBe('example')
         ->and($logs["scheduled-job-{$scheduler->id}"]->readAs)->toBe('example')
         ->and($logs["scheduled-job-{$rootJob->id}"]->readAs)->toBeNull()
-        ->and($logs["daemon-{$legacyWorker->id}"]->readAs)->toBe('swage')
+        ->and($logs["daemon-{$worker->id}"]->readAs)->toBeNull()
         ->and($logs['nginx-access']->readAs)->toBeNull();
 
     $shell = fakeShell();

@@ -31,9 +31,6 @@
                     @if ($site->octane)
                         <flux:badge size="sm" color="violet" icon="rocket-launch">Octane</flux:badge>
                     @endif
-                    @if ($site->isIsolated())
-                        <flux:badge size="sm" color="emerald" icon="shield-check">{{ __('Isolated') }}</flux:badge>
-                    @endif
                 </div>
                 <div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-zinc-500">
                     <a href="{{ ($site->certificate?->isActive() ? 'https://' : 'http://').$site->domain }}" target="_blank" class="flex items-center gap-1 hover:text-ember-600 dark:hover:text-ember-400">

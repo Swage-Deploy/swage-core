@@ -5,7 +5,6 @@ use App\Jobs\CheckRebootRequired;
 use App\Jobs\RebootServer;
 use App\Models\Server;
 use App\Provisioning\ServerTuner;
-use App\Provisioning\Upgrades\AutomaticSecurityUpdates;
 use App\Ssh\Script;
 use App\Ssh\ScriptResult;
 use Illuminate\Support\Facades\File;
@@ -25,26 +24,15 @@ test('new servers install security updates from ubuntu, the php ppa and nodesour
         ->toContain('systemctl enable --now unattended-upgrades');
 });
 
-test('existing servers get automatic security updates through an upgrade', function () {
-    $shell = fakeShell();
-    $server = Server::factory()->create();
-
-    app(AutomaticSecurityUpdates::class)->apply($server);
-
-    $shell->assertRan('apt-get install -yq unattended-upgrades');
-    $shell->assertRan('"site=deb.nodesource.com";');
-    expect($server->tasks()->sole()->name)->toBe('Turning on automatic security updates');
-});
-
 test('database servers only install security updates from ubuntu, since they have no php or node.js', function () {
-    $shell = fakeShell();
     $server = Server::factory()->database()->create();
+    $tuning = (new ServerTuner)->tune($server->specs(), $server->usesMysql(), (bool) $server->has_redis, $server->usesPostgres(), $server->isAppServer());
 
-    app(AutomaticSecurityUpdates::class)->apply($server);
-
-    $shell->assertRan('apt-get install -yq unattended-upgrades');
-    $shell->assertRan('Unattended-Upgrade::Automatic-Reboot "false";');
-    expect($shell->lastScript())->not->toContain('LP-PPA-ondrej-php')->not->toContain('deb.nodesource.com');
+    expect(Script::render('provision.server', ['server' => $server, 'tuning' => $tuning]))
+        ->toContain('apt-get install -yq unattended-upgrades')
+        ->toContain('Unattended-Upgrade::Automatic-Reboot "false";')
+        ->not->toContain('LP-PPA-ondrej-php')
+        ->not->toContain('deb.nodesource.com');
 });
 
 test('the panel host also installs updates from the php ppa, nodesource and cloudflared', function () {
@@ -101,7 +89,7 @@ test('the hourly check only looks at active servers', function () {
 
 test('the overview shows when a reboot is needed and reboots the server', function () {
     Queue::fake();
-    $server = Server::factory()->upgraded()->create(['reboot_required_at' => now(), 'reboot_required_packages' => ['linux-image-6.8.0-90-generic']]);
+    $server = Server::factory()->create(['reboot_required_at' => now(), 'reboot_required_packages' => ['linux-image-6.8.0-90-generic']]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->assertSee('Reboot required')
@@ -112,7 +100,7 @@ test('the overview shows when a reboot is needed and reboots the server', functi
 });
 
 test('the overview does not mention a reboot when none is needed', function () {
-    $server = Server::factory()->upgraded()->create();
+    $server = Server::factory()->create();
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->assertDontSee('Reboot required');

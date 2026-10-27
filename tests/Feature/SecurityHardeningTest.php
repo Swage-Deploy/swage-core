@@ -13,7 +13,6 @@ use App\Models\Server;
 use App\Models\Site;
 use App\Models\Task;
 use App\Models\User;
-use App\Provisioning\ServerUpgrades;
 use App\Sites\SiteEnvironment;
 use App\Ssh\PhpseclibRemoteShell;
 use App\Ssh\ScriptResult;
@@ -38,12 +37,11 @@ function verifyHostKey(Server $server, string $presentedKey): void
     })->check($server, $ssh);
 }
 
-test('a server without a pinned host key trusts the first one it sees', function () {
+test('a server without a pinned host key is never connected to', function () {
     $server = Server::factory()->create(['host_key' => null]);
 
-    verifyHostKey($server, 'ssh-ed25519 AAAAfirst');
-
-    expect($server->fresh()->host_key)->toBe('ssh-ed25519 AAAAfirst');
+    expect(fn () => verifyHostKey($server, 'ssh-ed25519 AAAAfirst'))->toThrow(RuntimeException::class);
+    expect($server->fresh()->host_key)->toBeNull();
 });
 
 test('a server refuses a host key that differs from the pinned one', function () {
@@ -64,7 +62,7 @@ test('a pinned host key cannot be replaced from the dashboard', function () {
     expect($server->fresh()->host_key)->toBe('ssh-ed25519 AAAApinned');
 });
 
-test('provisioning pins the host key and marks every upgrade as applied', function () {
+test('provisioning pins the host key', function () {
     $server = Server::factory()->pending()->create(['redis_password' => null]);
 
     $this->get(route('provision.script', $server->provision_token))->assertSee('--data-urlencode "host_key=${HOST_KEY}"', escape: false);
@@ -80,7 +78,6 @@ test('provisioning pins the host key and marks every upgrade as applied', functi
     $server->refresh();
 
     expect($server->host_key)->toBe('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample+key/0=')
-        ->and($server->applied_upgrades)->toBe(ServerUpgrades::ids())
         ->and($server->redis_password)->toHaveLength(40)
         ->and($script)
         ->toContain('usermod -aG "$SWAGE_USER" www-data')
@@ -128,16 +125,17 @@ test('sites without a database user get blank mysql credentials instead of swage
         ->not->toContain('DB_USERNAME=swage');
 });
 
-test('shared sites on an upgraded server get the redis password', function () {
-    $server = Server::factory()->upgraded()->create();
-    $site = Site::factory()->for($server)->create();
+test('sites connect to their private redis, never the server\'s shared one', function () {
+    $server = Server::factory()->create();
+    $site = Site::factory()->for($server)->systemUser('example')->create(['private_redis' => true]);
 
-    expect(SiteEnvironment::defaults($site))->toContain("REDIS_USERNAME=swage\nREDIS_PASSWORD={$server->redis_password}");
+    expect(SiteEnvironment::defaults($site))->toContain("REDIS_HOST=/run/swage-redis-example/redis.sock\nREDIS_PORT=0")
+        ->not->toContain('REDIS_PASSWORD');
 });
 
-test('new isolated sites get a private redis server only their user can reach', function () {
+test('new sites get a private redis server only their user can reach', function () {
     $shell = fakeShell();
-    $server = Server::factory()->upgraded()->create();
+    $server = Server::factory()->create();
 
     Livewire::actingAs($server->user)->test('pages::servers.sites', ['server' => $server])
         ->set('domain', 'example.com')
@@ -160,7 +158,7 @@ test('new isolated sites get a private redis server only their user can reach', 
 
 test('removing a site with private redis stops its redis server', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['private_redis' => true]);
+    $site = Site::factory()->systemUser('example')->create(['private_redis' => true]);
 
     RemoveSite::dispatchSync($site);
 
@@ -183,6 +181,30 @@ test('only administrators may add servers on private or reserved addresses', fun
         ->call('save')
         ->assertHasNoErrors();
 })->with(['127.0.0.1', '10.0.0.5', '192.168.1.10', '169.254.169.254', '::1', '100.64.0.1', '192.0.0.8', '198.18.0.1', '64:ff9b::7f00:1', '2002:7f00:1::', '2001::1']);
+
+test('servers are only added in production when swage is served over https', function () {
+    fakeShell();
+    app()->detectEnvironment(fn () => 'production');
+    config(['app.url' => 'http://swage.example.com']);
+
+    Livewire::actingAs(User::factory()->admin()->create())->test('pages::servers.create')
+        ->set('name', 'web')
+        ->set('ip_address', '203.0.113.10')
+        ->call('save')
+        ->assertHasErrors(['name']);
+
+    expect(Server::count())->toBe(0);
+
+    config(['app.url' => 'https://swage.example.com']);
+
+    Livewire::actingAs(User::factory()->admin()->create())->test('pages::servers.create')
+        ->set('name', 'web')
+        ->set('ip_address', '203.0.113.10')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Server::count())->toBe(1);
+});
 
 test('the certificate email is quoted for the shell', function () {
     $shell = fakeShell()->respondTo('certbot certonly', new ScriptResult(0, 'SWAGE_EXPIRES Jan 1 00:00:00 2027 GMT'));

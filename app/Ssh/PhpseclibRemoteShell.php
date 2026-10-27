@@ -109,8 +109,7 @@ class PhpseclibRemoteShell implements RemoteShell
     /**
      * Refuse to send anything to a host whose key differs from the one Swage pinned for the server.
      *
-     * The key is pinned when the server reports it during provisioning. Servers provisioned before that trust the key
-     * they present the first time Swage connects.
+     * The key is pinned when the server reports it during provisioning, so a server without one is never trusted.
      *
      * @throws HostKeyMismatchException
      */
@@ -118,18 +117,8 @@ class PhpseclibRemoteShell implements RemoteShell
     {
         $hostKey = $ssh->getServerPublicHostKey();
 
-        if ($hostKey === null) {
+        if ($hostKey === null || blank($server->host_key)) {
             throw new RuntimeException("Unable to verify the SSH host key of server [{$server->name}].");
-        }
-
-        if ($server->host_key === null) {
-            $server->host_key = $hostKey;
-
-            if ($server->exists) {
-                $server->saveQuietly();
-            }
-
-            return;
         }
 
         if (! hash_equals($server->host_key, $hostKey)) {

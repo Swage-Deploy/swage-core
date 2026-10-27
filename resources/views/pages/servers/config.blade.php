@@ -85,7 +85,7 @@ new class extends Component {
      */
     public function save(ApplyConfigOverride $applyOverride): void
     {
-        $this->authorize('update', $this->server);
+        $this->authorize('runAsRoot', $this->server);
 
         $this->validate(['override' => ['present', 'nullable', 'string', 'max:65535']]);
 
@@ -149,18 +149,26 @@ new class extends Component {
 
                 <div class="flex min-w-0 flex-col gap-6">
                     <x-panel :icon="$selected->icon()" :heading="__('Custom :service', ['service' => $selected->label()])" :description="$selected->description()">
-                        <x-slot:actions>
-                            @if ($this->hasUnsavedChanges)
-                                <flux:button size="sm" variant="ghost" wire:click="revert">{{ __('Discard changes') }}</flux:button>
-                            @endif
-                            <flux:button size="sm" variant="primary" icon="check" wire:click="save" wire:loading.attr="disabled" wire:target="save">
-                                <span wire:loading.remove wire:target="save">{{ __('Save & apply') }}</span>
-                                <span wire:loading wire:target="save">{{ __('Applying...') }}</span>
-                            </flux:button>
-                        </x-slot:actions>
+                        @can('runAsRoot', $server)
+                            <x-slot:actions>
+                                @if ($this->hasUnsavedChanges)
+                                    <flux:button size="sm" variant="ghost" wire:click="revert">{{ __('Discard changes') }}</flux:button>
+                                @endif
+                                <flux:button size="sm" variant="primary" icon="check" wire:click="save" wire:loading.attr="disabled" wire:target="save">
+                                    <span wire:loading.remove wire:target="save">{{ __('Save & apply') }}</span>
+                                    <span wire:loading wire:target="save">{{ __('Applying...') }}</span>
+                                </flux:button>
+                            </x-slot:actions>
+                        @endcan
 
                         <div class="flex flex-col gap-4">
-                            <flux:textarea wire:model.live.debounce.400ms="override" rows="14" spellcheck="false" :placeholder="__('Anything you add here takes precedence over the matching setting in Swage\'s config.')" class="!bg-zinc-950 font-mono text-xs !text-zinc-200 dark:!bg-black/40" />
+                            @cannot('runAsRoot', $server)
+                                <flux:callout icon="lock-closed" color="zinc">
+                                    <flux:callout.text>{{ __('Only the server\'s owner can change its services\' config, since the services read it as root.') }}</flux:callout.text>
+                                </flux:callout>
+                            @endcannot
+
+                            <flux:textarea wire:model.live.debounce.400ms="override" :readonly="auth()->user()->cannot('runAsRoot', $server)" rows="14" spellcheck="false" :placeholder="__('Anything you add here takes precedence over the matching setting in Swage\'s config.')" class="!bg-zinc-950 font-mono text-xs !text-zinc-200 dark:!bg-black/40" />
 
                             <flux:text class="text-xs">
                                 {{ __('When a setting here matches one in Swage\'s config, Swage\'s line is removed so yours applies. Swage checks the config before reloading and puts the previous files back if the service rejects it. Saving rewrites Swage\'s tuned files for this service, so make changes here rather than on the server.') }}

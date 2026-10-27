@@ -9,9 +9,9 @@ use App\Provisioning\ServerTuning;
 use App\Ssh\Script;
 
 /**
- * The PHP-FPM pool an isolated site runs in.
+ * The PHP-FPM pool a site runs in.
  *
- * Every isolated site gets its own on-demand pool, so idle sites hold no workers and the memory goes to the busy
+ * Every site gets its own on-demand pool, so idle sites hold no workers and the memory goes to the busy
  * ones. Each pool may grow as large as the server's secondary pools, which the server's tuning sized from its memory.
  */
 class SitePhpPool

@@ -54,12 +54,12 @@ new class extends Component {
     }
 
     /**
-     * Whether the site runs in a PHP-FPM pool of its own, which is where its PHP settings are written.
+     * Whether the site runs in its PHP-FPM pool, which is where its PHP settings are written. Octane serves requests itself.
      */
     #[Computed]
     public function supportsSettings(): bool
     {
-        return $this->site->isIsolated() && ! $this->site->octane;
+        return ! $this->site->octane;
     }
 
     /**

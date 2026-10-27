@@ -12,7 +12,7 @@ function siteEnvironment(Site $site)
 
 test('saving the environment clears the config cache by default', function () {
     $shell = fakeShell();
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com']);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com']);
 
     siteEnvironment($site)
         ->assertSet('clearConfig', true)
@@ -76,7 +76,7 @@ test('the environment is only read from the server once revealed', function () {
 
 test('the environment is read as the site\'s user, so a link in its place cannot make root read another file', function () {
     $shell = fakeShell()->respondTo('.env', new ScriptResult(0, "APP_NAME=Example\n"));
-    $site = Site::factory()->isolated('example')->create();
+    $site = Site::factory()->systemUser('example')->create();
 
     siteEnvironment($site)->call('reveal');
 

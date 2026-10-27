@@ -6,6 +6,7 @@ use App\Models\Server;
 use App\Models\Site;
 use App\Models\SourceControlConnection;
 use App\Models\User;
+use App\Provisioning\ServerTuner;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 
@@ -78,6 +79,36 @@ test('managers manage the server and its sites but cannot delete the server', fu
         ->and($manager->can('delete', $site->server))->toBeFalse();
 
     $this->actingAs($manager)->get(route('servers.sites.settings', [$site->server, $site]))->assertOk()->assertSee('Reveal environment');
+});
+
+test('only the owner runs daemons and scheduled jobs as root or changes service config', function () {
+    Queue::fake();
+    $shell = fakeShell();
+    $server = Server::factory()->create();
+    $server->update(['tuning' => (new ServerTuner)->tune($server->specs(), true, true)->toArray()]);
+    $manager = addServerMember($server, User::factory()->create(), MemberRole::Manager);
+
+    expect($manager->can('runAsRoot', $server))->toBeFalse()
+        ->and($server->user->can('runAsRoot', $server))->toBeTrue();
+
+    Livewire::actingAs($manager)->test('pages::servers.daemons', ['server' => $server])
+        ->assertDontSee('<option value="root"', escape: false)
+        ->set('command', 'php worker.php')->set('user', 'root')->call('create')->assertDispatched('toast-show');
+    Livewire::actingAs($manager)->test('pages::servers.scheduler', ['server' => $server])
+        ->set('command', 'php backup.php')->set('user', 'root')->call('create')->assertDispatched('toast-show');
+    Livewire::actingAs($manager)->test('pages::servers.config', ['server' => $server])
+        ->assertSee('Only the server\'s owner can change its services\' config')
+        ->set('override', 'worker_processes 1;')->call('save')->assertDispatched('toast-show');
+
+    expect($server->daemons()->exists())->toBeFalse()
+        ->and($server->scheduledJobs()->exists())->toBeFalse()
+        ->and($server->fresh()->config_overrides)->toBeNull();
+    $shell->assertNothingRan();
+
+    Livewire::actingAs($server->user)->test('pages::servers.daemons', ['server' => $server])
+        ->set('command', 'php worker.php')->set('user', 'root')->call('create')->assertHasNoErrors();
+
+    expect($server->daemons()->sole()->user)->toBe('root');
 });
 
 test('site members reach only their site, not the rest of its server', function () {
@@ -239,16 +270,4 @@ test('managers can still install a repository from a clone url', function () {
 
     expect($site->fresh()->repository)->toBe('git@git.example.com:acme/app.git');
     Queue::assertPushed(InstallRepository::class);
-});
-
-test('sites sharing swage\'s user warn that their members reach every other shared site', function () {
-    $shared = Site::factory()->create(['system_user' => null]);
-    $isolated = Site::factory()->for($shared->server)->isolated('example')->create();
-
-    Livewire::actingAs($shared->server->user)->test('pages::sites.members', ['server' => $shared->server, 'site' => $shared])
-        ->assertSee('This site shares a Linux user with other sites');
-    Livewire::actingAs($shared->server->user)->test('pages::sites.settings', ['server' => $shared->server, 'site' => $shared])
-        ->assertSee('This site shares a Linux user with other sites');
-    Livewire::actingAs($isolated->server->user)->test('pages::sites.members', ['server' => $isolated->server, 'site' => $isolated])
-        ->assertDontSee('This site shares a Linux user with other sites');
 });

@@ -7,7 +7,7 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 /**
- * Names the system users that isolated sites run as.
+ * Names the system users that sites run as.
  */
 class SiteSystemUser
 {
@@ -49,7 +49,7 @@ class SiteSystemUser
         $taken = [
             ...self::RESERVED,
             config('swage.user'),
-            ...$server->sites()->whereNotNull('system_user')->pluck('system_user'),
+            ...$server->sites()->pluck('system_user'),
             ...$server->databaseUsers()->pluck('username'),
         ];
 

@@ -132,7 +132,7 @@ test('in place deployments pull into the live directory', function () {
     expect($script)
         ->toContain('export SWAGE_RELEASE_DIRECTORY="$SWAGE_SITE_PATH/current"')
         ->toContain('reset --hard FETCH_HEAD')
-        ->toContain('sudo -n service "$SWAGE_PHP_FPM" reload')
+        ->toContain("sudo -n /usr/local/sbin/swage-reload-php '8.5'")
         ->not->toContain('SWAGE_RELEASE_NAME')
         ->not->toContain('current-next');
 });

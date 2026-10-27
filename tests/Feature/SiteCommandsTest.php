@@ -41,7 +41,7 @@ test('commands that are not artisan commands, or never finish, are refused', fun
 ]);
 
 test('every argument is quoted, so shell syntax reaches artisan as plain text', function () {
-    $site = Site::factory()->isolated('example')->create(['domain' => 'example.com']);
+    $site = Site::factory()->systemUser('example')->create(['domain' => 'example.com']);
 
     $script = ArtisanCommand::parse('app:report "$(id)" && whoami ; `reboot`')->script($site);
 
@@ -81,7 +81,7 @@ test('a refused command is shown as an error and not run', function () {
 
 test('the command runs as the site\'s user and keeps its output and exit code, with secrets masked', function () {
     $shell = fakeShell()->respondTo('artisan', new ScriptResult(1, "Migrating with db-secret-password\nFailed"));
-    $site = Site::factory()->isolated('example')->withRepository()->create();
+    $site = Site::factory()->systemUser('example')->withRepository()->create();
     $site->server->update(['database_password' => 'db-secret-password']);
     $command = SiteCommand::factory()->for($site)->create(['command' => 'migrate --force', 'status' => DeploymentStatus::Pending, 'output' => null, 'exit_code' => null]);
 

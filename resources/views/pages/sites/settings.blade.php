@@ -2,10 +2,8 @@
 
 use App\Actions\Sites\ChangeSiteDomain;
 use App\Actions\Sites\DeleteSite;
-use App\Actions\Sites\EnablePrivateRedis;
 use App\Actions\Sites\SetOctane;
 use App\Actions\Sites\UpdateSiteSettings;
-use App\Exceptions\ScriptFailedException;
 use App\Enums\ResourceStatus;
 use App\Models\Server;
 use App\Models\Site;
@@ -95,33 +93,6 @@ new class extends Component {
         Flux::toast(variant: 'success', text: $enabled ? __('Starting Octane.') : __('Switching back to PHP-FPM.'));
     }
 
-    /**
-     * Move an isolated site from the shared Redis server to one only it can reach.
-     */
-    public function enablePrivateRedis(EnablePrivateRedis $enablePrivateRedis): void
-    {
-        $this->authorize('update', $this->site);
-
-        if (! $this->site->supportsPrivateRedis() || $this->site->private_redis) {
-            return;
-        }
-
-        try {
-            $enablePrivateRedis->handle($this->site);
-        } catch (ScriptFailedException) {
-            Flux::toast(variant: 'danger', text: __('The private Redis server could not be started. Check the activity log.'));
-
-            return;
-        } catch (Throwable) {
-            Flux::toast(variant: 'danger', text: __('Unable to reach the server.'));
-
-            return;
-        }
-
-        Flux::modal('private-redis')->close();
-        Flux::toast(variant: 'success', text: __('The site now uses its own Redis server.'));
-    }
-
     public function delete(DeleteSite $deleteSite): void
     {
         $this->authorize('delete', $this->site);
@@ -139,8 +110,6 @@ new class extends Component {
 <div @if ($site->status->isBusy()) wire:poll.3s @endif>
     <x-pages::sites.layout :site="$site">
         <div class="flex flex-col gap-6">
-            <x-shared-site-warning :site="$site" />
-
             <x-panel icon="adjustments-horizontal" :heading="__('Site settings')">
             <form wire:submit="save" class="flex flex-col gap-6">
                 <flux:field>
@@ -194,19 +163,9 @@ new class extends Component {
             </section>
             </x-panel>
 
-            @if ($site->supportsPrivateRedis())
+            @if ($site->private_redis)
                 <x-panel icon="lock-closed" :heading="__('Redis')">
-                    @if ($site->private_redis)
-                        <flux:text>{{ __('The site has a Redis server of its own that only its user can reach, at :socket.', ['socket' => $site->redisSocket()]) }}</flux:text>
-                    @else
-                        <div class="flex flex-wrap items-center justify-between gap-4">
-                            <flux:text class="max-w-xl">{{ __('The site shares the server\'s Redis with other sites, which can read and change its cache, sessions and queued jobs. Give it a private Redis server to wall it off.') }}</flux:text>
-
-                            <flux:modal.trigger name="private-redis">
-                                <flux:button size="sm" icon="lock-closed">{{ __('Use private Redis') }}</flux:button>
-                            </flux:modal.trigger>
-                        </div>
-                    @endif
+                    <flux:text>{{ __('The site has a Redis server of its own that only its user can reach, at :socket.', ['socket' => $site->redisSocket()]) }}</flux:text>
                 </x-panel>
             @endif
 
@@ -247,22 +206,6 @@ new class extends Component {
                     <flux:button type="submit" variant="primary">{{ __('Change domain') }}</flux:button>
                 </div>
             </form>
-        </flux:modal>
-
-        <flux:modal name="private-redis" class="md:w-[28rem]">
-            <div class="flex flex-col gap-6">
-                <div>
-                    <flux:heading size="lg">{{ __('Move to a private Redis server?') }}</flux:heading>
-                    <flux:text class="mt-2">{{ __('The site starts with an empty Redis: cached data and sessions stored in Redis are lost, so users may be signed out, and queued jobs that have not run yet stay behind in the shared server. Pick a quiet moment, ideally with the queue empty.') }}</flux:text>
-                </div>
-
-                <div class="flex justify-end gap-2">
-                    <flux:modal.close>
-                        <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
-                    </flux:modal.close>
-                    <flux:button variant="primary" wire:click="enablePrivateRedis">{{ __('Move to private Redis') }}</flux:button>
-                </div>
-            </div>
         </flux:modal>
 
         <flux:modal name="delete-site" class="md:w-96">

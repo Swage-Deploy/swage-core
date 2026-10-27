@@ -124,7 +124,8 @@ new #[Title('Users')] class extends Component {
     }
 
     /**
-     * Give a user a new generated password, shown once, and sign them out of devices they asked to be remembered on.
+     * Give a user a new generated password, shown once, sign them out everywhere and revoke their API keys, so whoever
+     * may have taken over the account loses it.
      */
     public function resetPassword(int $userId): void
     {
@@ -132,6 +133,7 @@ new #[Title('Users')] class extends Component {
         $password = Str::password(20);
 
         $user->forceFill(['password' => $password, 'remember_token' => Str::random(60)])->save();
+        $user->tokens()->delete();
 
         $this->showPassword($user, $password);
     }
@@ -265,7 +267,7 @@ new #[Title('Users')] class extends Component {
                                             <flux:menu.item icon="user-circle" wire:click="impersonate({{ $user->id }})">{{ __('Sign in as :name', ['name' => $user->name]) }}</flux:menu.item>
                                         @endif
                                         <flux:menu.item icon="key" wire:click="resetPassword({{ $user->id }})"
-                                            wire:confirm="{{ __('Give :name a new password? Their current password stops working.', ['name' => $user->name]) }}">{{ __('Reset password') }}</flux:menu.item>
+                                            wire:confirm="{{ __('Give :name a new password? Their current password stops working, they are signed out everywhere and their API keys are revoked.', ['name' => $user->name]) }}">{{ __('Reset password') }}</flux:menu.item>
                                         <flux:menu.item icon="shield-exclamation" wire:click="resetTwoFactor({{ $user->id }})" :disabled="! $user->two_factor_secret"
                                             wire:confirm="{{ __('Turn off two-factor authentication for :name? They set it up again when they next sign in.', ['name' => $user->name]) }}">{{ __('Reset two-factor') }}</flux:menu.item>
                                         <flux:menu.separator />

@@ -1,10 +1,8 @@
 <?php
 
-use App\Enums\ResourceStatus;
 use App\Models\Server;
 use App\Models\Site;
 use App\Provisioning\ServerTuner;
-use App\Provisioning\Upgrades\CloudflareVisitorAddresses;
 use App\Sites\CloudflareNetworks;
 use App\Ssh\Script;
 use Illuminate\Contracts\Process\ProcessResult;
@@ -75,24 +73,6 @@ test('database servers get no Cloudflare ranges', function () {
     $tuning = (new ServerTuner)->tune($server->specs(), true, false, withPostgres: false, withPhp: false);
 
     expect(Script::render('provision.server', ['server' => $server, 'tuning' => $tuning]))->not->toContain('swage-cloudflare-ips');
-});
-
-test('the upgrade installs the refresh and rewrites the nginx config of installed sites', function () {
-    $shell = fakeShell();
-    $server = Server::factory()->create();
-    $installed = Site::factory()->for($server)->create(['domain' => 'shop.example.com', 'status' => ResourceStatus::Installed]);
-    Site::factory()->for($server)->create(['domain' => 'new.example.com', 'status' => ResourceStatus::Installing]);
-
-    app(CloudflareVisitorAddresses::class)->apply($server);
-
-    $script = $shell->lastScript();
-
-    expect($script)
-        ->toContain('/etc/cron.d/swage-cloudflare-ips')
-        ->toContain("/etc/nginx/sites-available/{$installed->domain}")
-        ->toContain('include '.CloudflareNetworks::CONFIG_PATH.';')
-        ->not->toContain('/etc/nginx/sites-available/new.example.com')
-        ->and(strpos($script, 'cat > '.CloudflareNetworks::CONFIG_PATH))->toBeLessThan(strpos($script, 'nginx -t'));
 });
 
 describe('the daily refresh', function () {

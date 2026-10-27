@@ -29,7 +29,7 @@ class LogFiles
             $logs[] = self::scheduledJob($scheduledJob, $scheduledJob->command === SiteCommands::scheduler($site) ? __('Scheduler') : null);
         }
 
-        foreach ($site->daemons()->oldest('id')->get()->each->setRelation('server', $site->server) as $daemon) {
+        foreach ($site->daemons()->oldest('id')->get() as $daemon) {
             $logs[] = self::daemon($daemon, $daemon->isOctane() ? 'Octane' : __('Queue worker #:id', ['id' => $daemon->id]));
         }
 
@@ -74,7 +74,7 @@ class LogFiles
 
         $logs[] = LogFile::file('supervisor', 'Supervisor', __('Services'), '/var/log/supervisor/supervisord.log');
 
-        foreach ($server->daemons()->with('site')->oldest('id')->get()->each->setRelation('server', $server) as $daemon) {
+        foreach ($server->daemons()->with('site')->oldest('id')->get() as $daemon) {
             $logs[] = self::daemon($daemon, $daemon->site ? "{$daemon->site->domain}: #{$daemon->id}" : null);
         }
 
@@ -126,7 +126,6 @@ class LogFiles
             $label ?? __('Daemon #:id', ['id' => $daemon->id]),
             __('Processes'),
             $daemon->logPath(),
-            readAs: $daemon->logsToRootOwnedDirectory() ? null : config('swage.user'),
         );
     }
 

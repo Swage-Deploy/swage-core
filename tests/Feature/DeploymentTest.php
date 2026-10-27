@@ -39,7 +39,7 @@ test('the deploy script expands macros into release commands', function () {
 
 test('a successful deployment records its commit and output', function () {
     $shell = fakeShell()->respondTo('git clone', new ScriptResult(0, "Cloning\nSWAGE_COMMIT abc1234def\nSWAGE_AUTHOR Taylor\nSWAGE_MESSAGE Fix the thing\nDone"));
-    $site = Site::factory()->withRepository()->create();
+    $site = Site::factory()->withRepository()->systemUser('example')->create();
     $deployment = $site->deployments()->create(['status' => DeploymentStatus::Pending, 'triggered_by' => 'Test']);
 
     DeploySite::dispatchSync($deployment);
@@ -52,7 +52,7 @@ test('a successful deployment records its commit and output', function () {
         ->output->toContain('Done')
         ->finished_at->not->toBeNull();
 
-    expect($shell->ran[0]['as'])->toBe('swage');
+    expect($shell->ran[0]['as'])->toBe('example');
 });
 
 test('a failed deployment is marked as failed', function () {

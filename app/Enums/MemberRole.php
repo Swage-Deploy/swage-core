@@ -21,7 +21,7 @@ enum MemberRole: string
     public function description(): string
     {
         return match ($this) {
-            self::Manager => __('Can deploy, change settings and the environment, and add or remove members.'),
+            self::Manager => __('Can deploy, change settings and the environment, and add or remove members. Only the owner can run commands as root or change the server\'s service config.'),
             self::Viewer => __('Can see deployments, settings and logs, but change nothing. The environment, which holds secrets, stays hidden.'),
         };
     }

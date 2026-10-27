@@ -6,7 +6,6 @@ use App\Actions\Servers\ApplyServerSpecs;
 use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Provisioning\ServerSpecs;
-use App\Provisioning\ServerUpgrades;
 use App\Ssh\Script;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -46,14 +45,13 @@ class ProvisionController extends Controller
             diskGb: $validated['disk_gb'],
         ));
 
-        // The script about to be served sets the server up the way every upgrade would, and pins its SSH host key
+        // The script about to be served sets the server up and pins its SSH host key
         // as reported over HTTPS, before Swage ever connects to it over SSH.
         $server->update([
             'status' => ServerStatus::Provisioning,
             'os_version' => $validated['os_version'],
             'provisioning_step' => 'Starting',
             'host_key' => $validated['host_key'],
-            'applied_upgrades' => ServerUpgrades::ids(),
             'redis_password' => $server->has_redis ? ($server->redis_password ?? Str::password(40, symbols: false)) : null,
         ]);
 

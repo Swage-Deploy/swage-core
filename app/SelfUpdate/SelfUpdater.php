@@ -247,10 +247,7 @@ class SelfUpdater
         }
 
         if (! is_file(config('swage.self_update.host_migrator'))) {
-            throw new RuntimeException(
-                'This install predates host migrations. Run resources/scripts/host/adopt-swage.sh '
-                .'as root on this server once, then update again.'
-            );
+            throw new RuntimeException('The host migration runner is missing. Install Swage again with the Swage installer.');
         }
 
         $target = $this->latest() ?? throw new RuntimeException("Unable to read the version tags or the [{$this->branch()}] branch from the repository.");

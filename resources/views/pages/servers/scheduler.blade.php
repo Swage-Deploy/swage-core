@@ -62,6 +62,10 @@ new class extends Component {
     {
         $this->authorize('update', $this->server);
 
+        if ($this->user === 'root') {
+            $this->authorize('runAsRoot', $this->server);
+        }
+
         $this->validate([
             'frequency' => ['required', Rule::in(array_keys(self::FREQUENCIES))],
             'custom_frequency' => ['required_if:frequency,custom', 'nullable', 'string', 'max:100',
@@ -97,11 +101,12 @@ new class extends Component {
         <div class="flex flex-col gap-6">
             <x-panel icon="clock" :heading="__('New scheduled job')" :description="__('Cron jobs on this server.')">
             <form wire:submit="create" class="flex max-w-2xl flex-col gap-4">
-                <flux:input wire:model="command" :label="__('Command')" placeholder="php8.5 /home/swage/example.com/current/artisan backup:run" class="font-mono" required />
+                <flux:input wire:model="command" :label="__('Command')" placeholder="php8.5 /home/example/example.com/current/artisan backup:run" class="font-mono" required />
 
                 <div class="grid gap-4 sm:grid-cols-3">
                     <flux:select wire:model="user" :label="__('User')">
                         @foreach ($server->systemUsers() as $systemUser)
+                            @continue($systemUser === 'root' && auth()->user()->cannot('runAsRoot', $server))
                             <flux:select.option :value="$systemUser">{{ $systemUser }}</flux:select.option>
                         @endforeach
                     </flux:select>

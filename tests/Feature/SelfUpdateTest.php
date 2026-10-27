@@ -140,13 +140,13 @@ test('a failed host migration stops the update before anything goes live', funct
     Process::assertDidntRun(fn (PendingProcess $process) => ($process->command[2] ?? null) === 'migrate');
 });
 
-test('installs from before host migrations are told to run the adoption script', function () {
+test('installs without the host migration runner are told to reinstall', function () {
     fakeRepository();
     config(['swage.self_update.host_migrator' => $this->root.'/missing']);
 
     $this->artisan('swage:update')->assertFailed();
 
-    expect(SelfUpdate::sole()->output)->toContain('adopt-swage.sh')
+    expect(SelfUpdate::sole()->output)->toContain('Install Swage again')
         ->and(currentRelease($this->root))->toBe(realpath($this->release));
 });
 

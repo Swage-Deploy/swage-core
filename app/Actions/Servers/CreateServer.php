@@ -60,6 +60,11 @@ class CreateServer
      */
     public function fromInput(User $user, array $input): Server
     {
+        // A server fetches its root provisioning script from Swage, so in production it must not travel in the clear.
+        if (app()->isProduction() && ! str_starts_with((string) config('app.url'), 'https://')) {
+            throw ValidationException::withMessages(['name' => __('Serve Swage over HTTPS, and set APP_URL to its https:// address, before adding servers.')]);
+        }
+
         $type = (string) ($input['type'] ?? '');
         $isAppServer = $type === ServerType::App->value;
 

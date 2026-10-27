@@ -9,10 +9,6 @@ use App\Enums\PhpVersion;
 use App\Enums\ServerStatus;
 use App\Enums\ServerType;
 use App\Provisioning\ServerSpecs;
-use App\Provisioning\ServerUpgrades;
-use App\Provisioning\Upgrades\RedisAuthentication;
-use App\Provisioning\Upgrades\SeparateNginxUser;
-use App\Provisioning\Upgrades\ServerUpgrade;
 use App\Servers\ServerIntegration;
 use App\Servers\ServerIntegrations;
 use App\Sites\SiteIntegration;
@@ -35,7 +31,7 @@ use Illuminate\Support\Collection;
     'name', 'type', 'ip_address', 'private_ip_address', 'ssh_port', 'status', 'provision_token', 'provisioning_step',
     'cpu_cores', 'memory_mb', 'disk_gb', 'os_version', 'php_versions', 'default_php_version',
     'has_mysql', 'has_postgres', 'has_pgvector', 'installing_database', 'database_access', 'has_redis', 'ssh_private_key', 'ssh_public_key', 'host_key', 'database_password',
-    'redis_password', 'tuning', 'config_overrides', 'applied_upgrades', 'reboot_required_at', 'reboot_required_packages', 'provisioned_at',
+    'redis_password', 'tuning', 'config_overrides', 'reboot_required_at', 'reboot_required_packages', 'provisioned_at',
 ])]
 #[Hidden(['provision_token', 'ssh_private_key', 'database_password', 'redis_password'])]
 class Server extends Model
@@ -77,7 +73,6 @@ class Server extends Model
             'redis_password' => 'encrypted',
             'tuning' => 'array',
             'config_overrides' => 'array',
-            'applied_upgrades' => 'array',
             'reboot_required_at' => 'datetime',
             'reboot_required_packages' => 'array',
             'provisioned_at' => 'datetime',
@@ -129,7 +124,7 @@ class Server extends Model
     }
 
     /**
-     * Get the system users daemons and scheduled jobs may run as: Swage's user, each isolated site's user, then root.
+     * Get the system users daemons and scheduled jobs may run as: Swage's user, each site's user, then root.
      *
      * @return list<string>
      */
@@ -137,7 +132,7 @@ class Server extends Model
     {
         return [
             config('swage.user'),
-            ...$this->sites()->whereNotNull('system_user')->orderBy('system_user')->pluck('system_user'),
+            ...$this->sites()->orderBy('system_user')->pluck('system_user'),
             'root',
         ];
     }
@@ -322,49 +317,19 @@ class Server extends Model
     }
 
     /**
-     * Determine if a server upgrade has been applied, either by running it or by provisioning after it existed.
-     */
-    public function hasAppliedUpgrade(string $id): bool
-    {
-        return in_array($id, $this->applied_upgrades ?? [], true);
-    }
-
-    /**
-     * Record that a server upgrade has been applied.
-     */
-    public function markUpgradeApplied(string $id): void
-    {
-        if (! $this->hasAppliedUpgrade($id)) {
-            $this->update(['applied_upgrades' => [...($this->applied_upgrades ?? []), $id]]);
-        }
-    }
-
-    /**
-     * Get the upgrades this server still needs, in the order they run.
-     *
-     * @return array<string, ServerUpgrade>
-     */
-    public function pendingUpgrades(): array
-    {
-        return ServerUpgrades::pendingFor($this);
-    }
-
-    /**
      * Get the user nginx runs as, which owns the PHP-FPM sockets.
-     *
-     * Servers provisioned before nginx had a user of its own keep running it as Swage's user until upgraded.
      */
     public function webUser(): string
     {
-        return $this->hasAppliedUpgrade(SeparateNginxUser::ID) ? 'www-data' : config('swage.user');
+        return 'www-data';
     }
 
     /**
-     * Determine if Redis requires the password Swage gives the server's shared sites.
+     * Determine if Redis requires the password Swage gives its own user.
      */
     public function usesRedisAuthentication(): bool
     {
-        return $this->has_redis && filled($this->redis_password) && $this->hasAppliedUpgrade(RedisAuthentication::ID);
+        return $this->has_redis && filled($this->redis_password);
     }
 
     /**
