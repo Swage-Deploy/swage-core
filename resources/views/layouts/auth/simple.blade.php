@@ -10,9 +10,7 @@
 
             <div class="flex w-full max-w-sm flex-col gap-6">
                 <a href="{{ route('home') }}" class="flex flex-col items-center gap-3 font-medium" wire:navigate>
-                    <span class="flex size-12 items-center justify-center rounded-xl bg-linear-to-br from-ember-400 to-ember-700 text-zinc-950 shadow-[0_0_32px_-4px] shadow-ember-500/60">
-                        <x-app-logo-icon class="size-7" />
-                    </span>
+                    <x-app-logo-icon class="h-12 w-auto drop-shadow-[0_0_24px_rgb(236_92_14/0.45)]" />
                     <span class="text-lg font-semibold tracking-tight text-zinc-900 dark:text-white">{{ config('app.name', 'Laravel') }}</span>
                 </a>
 
