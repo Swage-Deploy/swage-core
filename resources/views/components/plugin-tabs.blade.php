@@ -1,4 +1,4 @@
-@props(['integrations', 'current'])
+@props(['integrations', 'current', 'attention' => []])
 
 @php
     use App\Plugins\HasPluginTab;
@@ -13,6 +13,9 @@
                 :current="$id === $current"
                 wire:click="$set('plugin', '{{ $id }}')"
                 wire:key="plugin-tab-{{ $id }}"
+                :badge="($attention[$id] ?? null)?->count"
+                :badge:color="($attention[$id] ?? null)?->color()"
+                :title="($attention[$id] ?? null)?->label"
             >
                 {{ $integration instanceof HasPluginTab ? $integration->tabLabel() : Str::headline($id) }}
             </flux:navbar.item>

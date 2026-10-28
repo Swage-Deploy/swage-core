@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Actions\Users\Impersonation;
 use App\Models\User;
 use App\Plugins\PluginSettings;
+use App\Servers\ServerAttention;
 use App\Servers\ServerIntegrations;
 use App\Sites\SiteIntegrations;
 use App\SourceControl\ProviderSettings;
@@ -43,6 +44,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->scoped(ProviderSettings::class);
         $this->app->scoped(PluginSettings::class);
+        $this->app->scoped(ServerAttention::class);
 
         // Source control providers, server integrations and site integrations come from plugins, which register them
         // from their own service provider's boot method.

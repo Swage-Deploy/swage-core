@@ -46,7 +46,7 @@ new class extends Component {
 <x-pages::servers.layout :server="$server">
     <div class="flex flex-col gap-6">
         @if ($integration = $this->current)
-            <x-plugin-tabs :integrations="$this->integrations" :current="$integration->id()" />
+            <x-plugin-tabs :integrations="$this->integrations" :current="$integration->id()" :attention="app(App\Servers\ServerAttention::class)->forServer($server)" />
 
             @livewire($integration->settingsComponent(), ['server' => $server], key('integration-'.$integration->id()))
         @else

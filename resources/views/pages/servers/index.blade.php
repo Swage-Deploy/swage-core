@@ -3,7 +3,9 @@
 use App\Enums\ServerStatus;
 use App\Models\Server;
 use App\Models\Site;
+use App\Plugins\Attention;
 use App\Provisioning\ServerTuning;
+use App\Servers\ServerAttention;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Livewire\Attributes\Computed;
@@ -18,6 +20,20 @@ new #[Title('Servers')] class extends Component {
     public function servers(): Collection
     {
         return Auth::user()->accessibleServers()->withCount('sites')->latest()->get();
+    }
+
+    /**
+     * What plugins say needs looking at on each server, as one badge per server.
+     *
+     * @return array<int, Attention>
+     */
+    #[Computed]
+    public function attention(): array
+    {
+        return array_filter(array_map(
+            fn (array $items): ?Attention => ServerAttention::combine($items),
+            app(ServerAttention::class)->for($this->servers),
+        ));
     }
 
     /**
@@ -105,7 +121,12 @@ new #[Title('Servers')] class extends Component {
                             </div>
                         </div>
                         <div class="flex flex-col items-end gap-1.5">
-                            <x-status :color="$server->status->color()" :label="$server->status->label()" />
+                            <div class="flex items-center gap-1.5">
+                                @if ($attention = $this->attention[$server->id] ?? null)
+                                    <flux:badge size="sm" :color="$attention->color()" icon="exclamation-triangle" :title="$attention->label" aria-label="{{ $attention->label }}">{{ $attention->count }}</flux:badge>
+                                @endif
+                                <x-status :color="$server->status->color()" :label="$server->status->label()" />
+                            </div>
                             @if ($server->user_id !== auth()->id())
                                 <flux:badge size="sm" color="zinc">{{ __('Shared') }}</flux:badge>
                             @endif
