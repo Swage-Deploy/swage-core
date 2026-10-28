@@ -23,6 +23,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('users', 'pages::users.index')->middleware(['can:administer', 'password.confirm'])->name('users');
     Route::livewire('plugins/{category?}', 'pages::plugins.index')->middleware(['can:administer', 'password.confirm'])->where('category', 'system|server|site|activity')->name('plugins');
     Route::livewire('plugins/system/source-control/{provider}', 'pages::source-control.configure')->middleware(['can:administer', 'password.confirm'])->where('provider', '[a-z0-9-]+')->name('source-control.configure');
+    Route::livewire('plugins/{category}/{integration}/configure', 'pages::plugins.configure')->middleware(['can:administer', 'password.confirm'])->where(['category' => 'server|site', 'integration' => '[a-z0-9-]+'])->name('plugins.configure');
 
     Route::prefix('servers/{server}')->name('servers.')->middleware('can:view,server')->scopeBindings()->group(function () {
         Route::livewire('/', 'pages::servers.show')->name('show');

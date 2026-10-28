@@ -3,6 +3,8 @@
 use App\Models\SelfUpdate;
 use App\Models\Site;
 use App\Models\SourceControlConnection;
+use App\Plugins\HasPluginSettings;
+use App\Plugins\HasPluginTab;
 use App\Plugins\IndexedPlugin;
 use App\Plugins\Plugin;
 use App\Plugins\PluginCategory;
@@ -10,6 +12,9 @@ use App\Plugins\PluginIndex;
 use App\Plugins\PluginInstaller;
 use App\Plugins\PluginKind;
 use App\Plugins\PluginManifest;
+use App\Plugins\PluginSettings;
+use App\Servers\ServerIntegrations;
+use App\Sites\SiteIntegrations;
 use App\SelfUpdate\SelfUpdater;
 use App\SourceControl\SourceControlProvider;
 use App\SourceControl\SourceControlProviders;
@@ -17,6 +22,7 @@ use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\Title;
@@ -121,6 +127,23 @@ new #[Title('Plugins')] class extends Component {
     public function providers(): array
     {
         return app(SourceControlProviders::class)->all();
+    }
+
+    /**
+     * The server or site integrations on the tab being viewed that have settings, keyed by id.
+     *
+     * @return array<string, HasPluginSettings>
+     */
+    #[Computed]
+    public function configurable(): array
+    {
+        $integrations = match ($this->currentCategory) {
+            PluginCategory::Server => app(ServerIntegrations::class)->all(),
+            PluginCategory::Site => app(SiteIntegrations::class)->all(),
+            default => [],
+        };
+
+        return array_filter($integrations, fn (object $integration): bool => $integration instanceof HasPluginSettings);
     }
 
     /**
@@ -461,6 +484,31 @@ new #[Title('Plugins')] class extends Component {
                                 <flux:table.cell colspan="3">{{ __('No source control plugins are installed. Install one, such as GitHub, from the list below.') }}</flux:table.cell>
                             </flux:table.row>
                         @endforelse
+                    </flux:table.rows>
+                </flux:table>
+            </x-panel>
+        @endif
+
+        @if ($this->configurable !== [])
+            <x-panel icon="cog-6-tooth" :heading="__('Settings')" :description="__('Plugins with settings that apply to every server or site they are used on, such as API keys.')" flush>
+                <flux:table>
+                    <flux:table.rows>
+                        @foreach ($this->configurable as $id => $integration)
+                            @php($label = $integration instanceof HasPluginTab ? $integration->tabLabel() : Str::headline($id))
+                            <flux:table.row :key="'configurable-'.$id">
+                                <flux:table.cell class="font-medium">{{ $label }}</flux:table.cell>
+                                <flux:table.cell>
+                                    @if (app(PluginSettings::class)->isConfigured($integration))
+                                        <flux:badge size="sm" color="emerald">{{ __('Configured') }}</flux:badge>
+                                    @else
+                                        <flux:badge size="sm" color="amber">{{ __('Not configured') }}</flux:badge>
+                                    @endif
+                                </flux:table.cell>
+                                <flux:table.cell align="end">
+                                    <flux:button size="sm" icon="cog-6-tooth" :href="route('plugins.configure', [$category, $id])" wire:navigate>{{ __('Configure :plugin', ['plugin' => $label]) }}</flux:button>
+                                </flux:table.cell>
+                            </flux:table.row>
+                        @endforeach
                     </flux:table.rows>
                 </flux:table>
             </x-panel>
