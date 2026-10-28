@@ -274,6 +274,13 @@ if ! [[ "$RELEASE" =~ ^$APP_ROOT/releases/[0-9]+$ ]]; then
 fi
 
 RELEASE_NAME=${RELEASE##*/}
+
+# The release moves as it is, and its swage:host-moved command updates the servers once it runs here.
+if ! old "test -f $RELEASE/app/Console/Commands/SwageHostMoved.php"; then
+    echo "The old host's Swage is too old to move: it has no swage:host-moved command. Update it from its Updates" >&2
+    echo "page, then run this script again." >&2
+    exit 1
+fi
 VERSION=$(old "sudo -u $APP_USER git -C $RELEASE describe --tags --always 2> /dev/null" || echo unknown)
 SIZE=$(old "du -sh $APP_ROOT/shared $RELEASE /var/lib/mysql/swage 2> /dev/null | awk '{ print \$1 }' | paste -sd ' '" || true)
 
