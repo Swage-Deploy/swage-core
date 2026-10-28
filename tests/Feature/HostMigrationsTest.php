@@ -55,6 +55,7 @@ test('host scripts are valid bash', function () {
 
     $scripts = [
         resource_path('scripts/install-swage.sh'),
+        resource_path('scripts/move-swage.sh'),
         resource_path('scripts/host/swage-host-migrate'),
         resource_path('scripts/host/migrate.sh'),
         resource_path('scripts/host/lib.sh'),
