@@ -66,21 +66,45 @@ jobs:
 
           echo "Releasing $VERSION after ${latest:-no earlier release} at $(git rev-parse --short HEAD)."
 
+      # Checks still running, such as the tests of a commit pushed just before the release was started, are waited for,
+      # for up to half an hour. A check that has failed stops the release straight away.
       - name: Check that main passed its checks
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          # Release runs are left out, since this one is still going.
-          failed=$(gh api "repos/${GITHUB_REPOSITORY}/commits/$(git rev-parse HEAD)/check-runs" --paginate \
-            --jq '.check_runs[] | select(.app.slug == "github-actions") | select(.name | test("release"; "i") | not) | select(.status != "completed" or (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral")) | "\(.name): \(.status) \(.conclusion // "")"')
+          commit=$(git rev-parse HEAD)
+          deadline=$(( $(date +%s) + 1800 ))
 
-          if [ -n "$failed" ]; then
-            echo "main has checks that did not pass, so it is not released:" >&2
-            echo "$failed" >&2
-            exit 1
-          fi
+          while true; do
+            # Release runs are left out, since this one is still going.
+            checks=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${commit}/check-runs" --paginate \
+              --jq '.check_runs[] | select(.app.slug == "github-actions") | select(.name | test("release"; "i") | not) | "\(.status) \(.conclusion // "-") \(.name)"')
+
+            failed=$(printf '%s\n' "$checks" | awk '$1 == "completed" && $2 != "success" && $2 != "skipped" && $2 != "neutral"' || true)
+            running=$(printf '%s\n' "$checks" | awk 'NF && $1 != "completed"' || true)
+
+            if [ -n "$failed" ]; then
+              echo "main has checks that did not pass, so it is not released:" >&2
+              echo "$failed" >&2
+              exit 1
+            fi
+
+            if [ -z "$running" ]; then
+              break
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "main's checks were still running after half an hour, so it is not released:" >&2
+              echo "$running" >&2
+              exit 1
+            fi
+
+            echo "Waiting for main's checks to finish:"
+            echo "$running"
+            sleep 20
+          done
 
       - name: Sign the tag
         env:
