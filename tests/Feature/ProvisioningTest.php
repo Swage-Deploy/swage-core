@@ -128,6 +128,25 @@ test('the provisioning script leaves swap and kernel settings to a container hos
         ->and(strpos($script, 'if ! swage_in_container; then'))->toBeLessThan(strpos($script, 'systemctl enable --now disable-thp.service'));
 });
 
+test('the provisioning script turns off ssh password logins once the panel\'s key is in place', function () {
+    $server = Server::factory()->pending()->create();
+
+    $script = $this->post(route('provision.specs', $server->provision_token), [
+        'cpu_cores' => 2,
+        'memory_mb' => 4096,
+        'disk_gb' => 80,
+        'os_version' => '24.04',
+        'host_key' => 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample',
+    ])->assertOk()->getContent();
+
+    $hardening = strpos($script, 'cat > /etc/ssh/sshd_config.d/00-swage.conf');
+
+    expect($script)->toContain("PermitRootLogin prohibit-password\nPasswordAuthentication no\nKbdInteractiveAuthentication no\n")
+        ->and($hardening)->toBeGreaterThan(strpos($script, 'chmod 600 "$home/.ssh/authorized_keys"'))
+        ->and(strpos($script, 'sshd -t'))->toBeGreaterThan($hardening)
+        ->and(strpos($script, 'systemctl try-reload-or-restart ssh'))->toBeGreaterThan(strpos($script, 'sshd -t'));
+});
+
 test('reported specs are validated', function () {
     $server = Server::factory()->pending()->create();
 

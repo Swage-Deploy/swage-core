@@ -56,6 +56,22 @@ for home in /root "/home/$SWAGE_USER"; do
     chmod 600 "$home/.ssh/authorized_keys"
 done
 
+# Key-only SSH: the panel's key was just added to root and the Swage user, so passwords can be turned off.
+# Files in sshd_config.d are read in order and the first value wins, so this overrides cloud-init's 50-cloud-init.conf.
+cat > /etc/ssh/sshd_config.d/00-swage.conf <<'SWAGE_EOF'
+PermitRootLogin prohibit-password
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+PubkeyAuthentication yes
+SWAGE_EOF
+
+# Ubuntu 24.04 starts sshd on demand, so its runtime directory may not exist yet, and sshd -t refuses to check the
+# config without it.
+install -d -m 755 /run/sshd
+sshd -t
+systemctl try-reload-or-restart ssh
+
 chown -R "$SWAGE_USER:$SWAGE_USER" "/home/$SWAGE_USER"
 chmod 750 "/home/$SWAGE_USER"
 mkdir -p "/home/$SWAGE_USER/.letsencrypt"
