@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\SourceControlController;
 use App\Http\Controllers\DatabaseExportController;
+use App\Http\Controllers\DatabaseRestoreUploadController;
 use App\Http\Controllers\DeployTriggerController;
 use App\Http\Controllers\ProvisionController;
 use App\Http\Controllers\SourceControlWebhookController;
@@ -30,6 +31,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('sites', 'pages::servers.sites')->name('sites');
         Route::livewire('databases', 'pages::servers.databases')->name('databases');
         Route::get('databases/{database}/export', DatabaseExportController::class)->middleware('can:transferDatabases,server')->name('databases.export');
+        Route::post('databases/{database}/restore-uploads', [DatabaseRestoreUploadController::class, 'store'])->middleware('can:transferDatabases,server')->name('databases.restore-uploads.store');
+        Route::put('databases/{database}/restore-uploads/{upload}', [DatabaseRestoreUploadController::class, 'update'])->middleware('can:transferDatabases,server')->name('databases.restore-uploads.update');
         Route::livewire('daemons', 'pages::servers.daemons')->name('daemons');
         Route::livewire('scheduler', 'pages::servers.scheduler')->name('scheduler');
         Route::livewire('config', 'pages::servers.config')->name('config');

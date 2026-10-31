@@ -11,6 +11,7 @@ use App\Jobs\SyncDatabaseAccess;
 use App\Models\Database;
 use App\Models\DatabaseUser;
 use App\Models\Server;
+use App\Servers\DatabaseRestoreUpload;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Collection as SupportCollection;
@@ -19,12 +20,8 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
-use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
-use Livewire\WithFileUploads;
 
 new class extends Component {
-    use WithFileUploads;
-
     public Server $server;
 
     public string $name = '';
@@ -46,7 +43,10 @@ new class extends Component {
 
     public ?int $restoringDatabaseId = null;
 
-    public ?TemporaryUploadedFile $restoreFile = null;
+    /**
+     * The dump uploaded for the restore, sent in chunks by the browser.
+     */
+    public string $restoreUpload = '';
 
     public string $restoreConfirmation = '';
 
@@ -118,7 +118,7 @@ new class extends Component {
         abort_unless($this->server->databases()->findOrFail($databaseId)->isTransferable(), 404);
 
         $this->restoringDatabaseId = $databaseId;
-        $this->reset('restoreFile', 'restoreConfirmation');
+        $this->reset('restoreUpload', 'restoreConfirmation');
         $this->resetValidation();
 
         Flux::modal('restore-database')->show();
@@ -136,20 +136,26 @@ new class extends Component {
         abort_unless($database->isTransferable(), 404);
 
         $this->validate([
-            'restoreFile' => ['required', 'file', 'extensions:sql,gz', 'max:1048576'],
+            'restoreUpload' => ['required', 'string'],
             'restoreConfirmation' => ['required', Rule::in([$database->name])],
         ], [
-            'restoreFile.extensions' => __('Choose a .sql or .sql.gz file.'),
+            'restoreUpload.required' => __('Choose a file and wait for it to upload.'),
             'restoreConfirmation.in' => __('Type :name to confirm.', ['name' => $database->name]),
         ]);
 
-        $path = $this->restoreFile->store('database-restores', 'local');
+        $upload = DatabaseRestoreUpload::find($this->restoreUpload, auth()->user(), $database);
+
+        if (! $upload?->isComplete()) {
+            throw ValidationException::withMessages(['restoreUpload' => __('Choose a file and wait for it to upload.')]);
+        }
+
+        $path = $upload->claim();
 
         $database->update(['status' => ResourceStatus::Restoring]);
 
         RestoreDatabase::dispatch($database, $path);
 
-        $this->reset('restoringDatabaseId', 'restoreFile', 'restoreConfirmation');
+        $this->reset('restoringDatabaseId', 'restoreUpload', 'restoreConfirmation');
         Flux::modal('restore-database')->close();
         Flux::toast(variant: 'success', text: __('Restoring database. Follow along in the activity log.'));
     }
@@ -444,34 +450,32 @@ new class extends Component {
             </x-panel>
         </div>
 
-        <flux:modal name="restore-database" class="w-full max-w-md">
+        {{-- Closing the modal clears it, so an upload in progress stops and the next restore starts afresh. --}}
+        <flux:modal name="restore-database" class="w-full max-w-md" x-on:close="$wire.restoringDatabaseId && $wire.set('restoringDatabaseId', null)">
             @if ($database = $this->restoringDatabase)
                 {{-- Not a form, so pressing enter cannot start a restore without the second confirmation. --}}
-                <div class="flex flex-col gap-6">
+                <div class="flex flex-col gap-6" x-data="databaseRestoreUpload(@js(route('servers.databases.restore-uploads.store', [$server, $database])), @js(csrf_token()))">
                     <div>
                         <flux:heading size="lg">{{ __('Restore :name', ['name' => $database->name]) }}</flux:heading>
                         <flux:subheading class="mt-2">{{ __('Every table in :name is dropped, then the file is imported in their place. Export the database first if you may want its data back.', ['name' => $database->name]) }}</flux:subheading>
                     </div>
 
-                    <flux:field
-                        x-data="{ uploading: false, progress: 0 }"
-                        x-on:livewire-upload-start="uploading = true; progress = 0"
-                        x-on:livewire-upload-progress="progress = $event.detail.progress"
-                        x-on:livewire-upload-finish="uploading = false"
-                        x-on:livewire-upload-error="uploading = false"
-                        x-on:livewire-upload-cancel="uploading = false"
-                    >
+                    <flux:field>
                         <flux:label>{{ __('Dump file') }}</flux:label>
                         <flux:description>{{ __('A .sql or .sql.gz file of this one database, up to 1 GB, such as an export from here or from mysqldump.') }}</flux:description>
-                        <flux:input type="file" wire:model="restoreFile" accept=".sql,.gz" />
-                        <div x-show="uploading" x-cloak class="mt-3 flex flex-col gap-2">
+                        <flux:input type="file" accept=".sql,.gz" x-on:change="upload($event.target.files[0])" />
+                        <div x-show="uploading || uploaded" x-cloak class="mt-3 flex flex-col gap-2">
                             <div class="flex justify-between text-sm">
-                                <flux:text>{{ __('Uploading…') }}</flux:text>
+                                <flux:text x-text="uploaded ? @js(__('Uploaded.')) : @js(__('Uploading…'))"></flux:text>
                                 <flux:text class="tabular-nums" x-text="progress + '%'"></flux:text>
                             </div>
                             <flux:progress x-model="progress" />
                         </div>
-                        <flux:error name="restoreFile" />
+                        <div x-show="error" x-cloak role="alert" class="mt-3 text-sm font-medium text-red-500 dark:text-red-400">
+                            <flux:icon name="exclamation-triangle" variant="mini" class="inline" />
+                            <span x-text="error"></span>
+                        </div>
+                        <flux:error name="restoreUpload" />
                     </flux:field>
 
                     <flux:input wire:model="restoreConfirmation" :label="__('Type :name to confirm', ['name' => $database->name])" class="font-mono" autocomplete="off" />
@@ -480,7 +484,7 @@ new class extends Component {
                         <flux:modal.close>
                             <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
                         </flux:modal.close>
-                        <flux:button variant="danger" wire:click="restoreDatabase" wire:loading.attr="disabled" wire:target="restoreFile" wire:confirm.danger="{{ __('Replace everything in :name with this file? The current tables and data are deleted and cannot be recovered.', ['name' => $database->name]) }}">{{ __('Restore') }}</flux:button>
+                        <flux:button variant="danger" wire:click="restoreDatabase" x-bind:disabled="uploading" wire:confirm.danger="{{ __('Replace everything in :name with this file? The current tables and data are deleted and cannot be recovered.', ['name' => $database->name]) }}">{{ __('Restore') }}</flux:button>
                     </div>
                 </div>
             @endif

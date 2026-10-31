@@ -8,18 +8,47 @@ use App\Jobs\RestoreDatabase;
 use App\Models\Database;
 use App\Models\Server;
 use App\Models\User;
+use App\Servers\DatabaseRestoreUpload;
 use App\Ssh\Script;
 use App\Ssh\ScriptResult;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Testing\TestResponse;
 use Livewire\Livewire;
+use Tests\TestCase;
 
 function addTransferMember(Server $server, User $user, MemberRole $role): User
 {
     $server->members()->attach($user->id, ['role' => $role->value]);
 
     return $user;
+}
+
+/**
+ * Upload a dump in chunks the way the restore modal does, returning the upload's id.
+ */
+function uploadRestoreDump(TestCase $test, Database $database, string $name, string $contents, int $chunkSize = 10): string
+{
+    $test->actingAs($database->server->user);
+
+    $id = $test->postJson(route('servers.databases.restore-uploads.store', [$database->server, $database]), ['name' => $name, 'size' => strlen($contents)])
+        ->assertOk()
+        ->json('id');
+
+    foreach (str_split($contents, $chunkSize) as $index => $chunk) {
+        sendRestoreChunk($test, $database, $id, $index * $chunkSize, $chunk)->assertOk();
+    }
+
+    return $id;
+}
+
+function sendRestoreChunk(TestCase $test, Database $database, string $id, int $offset, string $chunk): TestResponse
+{
+    return $test->call('PUT', route('servers.databases.restore-uploads.update', [$database->server, $database, $id, 'offset' => $offset]), server: [
+        'CONTENT_TYPE' => 'application/octet-stream',
+        'CONTENT_LENGTH' => strlen($chunk),
+        'HTTP_ACCEPT' => 'application/json',
+    ], content: $chunk);
 }
 
 test('a database is exported as a gzipped dump streamed from the server', function () {
@@ -97,7 +126,7 @@ test('a database is restored from an uploaded dump after its name is typed', fun
 
     Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
         ->call('startRestore', $database->id)
-        ->set('restoreFile', UploadedFile::fake()->createWithContent('shop.sql', 'CREATE TABLE orders (id int);'))
+        ->set('restoreUpload', uploadRestoreDump($this, $database, 'shop.sql', 'CREATE TABLE orders (id int);'))
         ->set('restoreConfirmation', 'shop')
         ->call('restoreDatabase')
         ->assertHasNoErrors();
@@ -125,7 +154,7 @@ test('a dump is imported as an account that can only reach its database, and can
 
     Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
         ->call('startRestore', $database->id)
-        ->set('restoreFile', UploadedFile::fake()->createWithContent('shop.sql', 'CREATE TABLE orders (id int);'))
+        ->set('restoreUpload', uploadRestoreDump($this, $database, 'shop.sql', 'CREATE TABLE orders (id int);'))
         ->set('restoreConfirmation', 'shop_db')
         ->call('restoreDatabase')
         ->assertHasNoErrors();
@@ -166,7 +195,7 @@ test('a gzipped dump is recognised by its contents and unzipped on the server', 
 
     Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
         ->call('startRestore', $database->id)
-        ->set('restoreFile', UploadedFile::fake()->createWithContent('shop.sql.gz', gzencode('CREATE TABLE orders (id int);')))
+        ->set('restoreUpload', uploadRestoreDump($this, $database, 'shop.sql.gz', gzencode('CREATE TABLE orders (id int);')))
         ->set('restoreConfirmation', 'shop')
         ->call('restoreDatabase')
         ->assertHasNoErrors();
@@ -182,7 +211,7 @@ test('a restore does not start until the database name is typed correctly', func
 
     Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
         ->call('startRestore', $database->id)
-        ->set('restoreFile', UploadedFile::fake()->createWithContent('shop.sql', 'SELECT 1;'))
+        ->set('restoreUpload', uploadRestoreDump($this, $database, 'shop.sql', 'SELECT 1;'))
         ->set('restoreConfirmation', $confirmation)
         ->call('restoreDatabase')
         ->assertHasErrors(['restoreConfirmation']);
@@ -191,19 +220,135 @@ test('a restore does not start until the database name is typed correctly', func
     expect($database->fresh()->status)->toBe(ResourceStatus::Installed);
 })->with(['', 'Shop', 'blog']);
 
-test('a restore needs a sql or gzipped file', function () {
-    Queue::fake();
+test('a restore needs a sql or gzipped file of up to 1 GB', function (string $name, int $size, string $error) {
     Storage::fake('local');
     $database = Database::factory()->create(['name' => 'shop']);
 
+    $this->actingAs($database->server->user)
+        ->postJson(route('servers.databases.restore-uploads.store', [$database->server, $database]), ['name' => $name, 'size' => $size])
+        ->assertJsonValidationErrors([$error]);
+
+    expect(Storage::disk('local')->allFiles())->toBeEmpty();
+})->with([
+    'php file' => ['shop.php', 100, 'name'],
+    'too large' => ['shop.sql.gz', DatabaseRestoreUpload::MAX_BYTES + 1, 'size'],
+    'empty' => ['shop.sql', 0, 'size'],
+]);
+
+test('a dump uploaded in chunks is restored whole', function () {
+    Storage::fake('local');
+    $shell = fakeShell();
+    $database = Database::factory()->create(['name' => 'shop']);
+    $dump = str_repeat("INSERT INTO orders VALUES (1);\n", 20);
+
     Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
         ->call('startRestore', $database->id)
-        ->set('restoreFile', UploadedFile::fake()->createWithContent('shop.php', '<?php echo 1;'))
+        ->set('restoreUpload', uploadRestoreDump($this, $database, 'shop.sql', $dump, chunkSize: 64))
         ->set('restoreConfirmation', 'shop')
         ->call('restoreDatabase')
-        ->assertHasErrors(['restoreFile']);
+        ->assertHasNoErrors();
+
+    expect($shell->uploaded[0]['contents'])->toBe($dump)
+        ->and(Storage::disk('local')->allFiles())->toBeEmpty();
+});
+
+test('a chunk that does not start where the upload is up to is refused with that position', function () {
+    Storage::fake('local');
+    $database = Database::factory()->create();
+    $id = DatabaseRestoreUpload::start($database->server->user, $database, 'shop.sql', 12)->id;
+
+    $this->actingAs($database->server->user);
+    sendRestoreChunk($this, $database, $id, 0, 'abcdef')->assertOk()->assertJson(['received' => 6]);
+
+    // Sent again, as when its response was lost.
+    sendRestoreChunk($this, $database, $id, 0, 'abcdef')->assertConflict()->assertJson(['received' => 6]);
+    sendRestoreChunk($this, $database, $id, 9, 'xyz')->assertConflict()->assertJson(['received' => 6]);
+
+    expect(DatabaseRestoreUpload::find($id, $database->server->user, $database)->received())->toBe(6);
+});
+
+test('a chunk that runs past the size the upload started with is refused', function () {
+    Storage::fake('local');
+    $database = Database::factory()->create();
+    $id = DatabaseRestoreUpload::start($database->server->user, $database, 'shop.sql', 4)->id;
+
+    $this->actingAs($database->server->user);
+
+    sendRestoreChunk($this, $database, $id, 0, 'abcdef')->assertStatus(413);
+
+    expect(DatabaseRestoreUpload::find($id, $database->server->user, $database)->received())->toBe(0);
+});
+
+test('an upload can only be added to and restored by whoever started it, for the database it started for', function () {
+    Storage::fake('local');
+    Queue::fake();
+    $database = Database::factory()->create(['name' => 'shop']);
+    $other = Database::factory()->create(['server_id' => $database->server_id, 'name' => 'blog']);
+    $manager = addTransferMember($database->server, User::factory()->create(), MemberRole::Manager);
+    $id = DatabaseRestoreUpload::start($database->server->user, $database, 'shop.sql', 6)->id;
+
+    $this->actingAs($manager);
+    sendRestoreChunk($this, $database, $id, 0, 'abcdef')->assertNotFound();
+
+    $this->actingAs($database->server->user);
+    sendRestoreChunk($this, $other, $id, 0, 'abcdef')->assertNotFound();
+    sendRestoreChunk($this, $database, $id, 0, 'abcdef')->assertOk();
+
+    Livewire::actingAs($manager)->test('pages::servers.databases', ['server' => $database->server])
+        ->call('startRestore', $database->id)
+        ->set('restoreUpload', $id)
+        ->set('restoreConfirmation', 'shop')
+        ->call('restoreDatabase')
+        ->assertHasErrors(['restoreUpload']);
 
     Queue::assertNothingPushed();
+});
+
+test('a restore waits for the whole file to arrive', function () {
+    Storage::fake('local');
+    Queue::fake();
+    $database = Database::factory()->create(['name' => 'shop']);
+    $id = DatabaseRestoreUpload::start($database->server->user, $database, 'shop.sql', 12)->id;
+
+    $this->actingAs($database->server->user);
+    sendRestoreChunk($this, $database, $id, 0, 'abcdef')->assertOk();
+
+    Livewire::actingAs($database->server->user)->test('pages::servers.databases', ['server' => $database->server])
+        ->call('startRestore', $database->id)
+        ->set('restoreUpload', $id)
+        ->set('restoreConfirmation', 'shop')
+        ->call('restoreDatabase')
+        ->assertHasErrors(['restoreUpload']);
+
+    Queue::assertNothingPushed();
+});
+
+test('viewers cannot upload a dump', function () {
+    Storage::fake('local');
+    $database = Database::factory()->create();
+    $viewer = addTransferMember($database->server, User::factory()->create(), MemberRole::Viewer);
+
+    $this->actingAs($viewer)
+        ->postJson(route('servers.databases.restore-uploads.store', [$database->server, $database]), ['name' => 'shop.sql', 'size' => 6])
+        ->assertForbidden();
+
+    expect(Storage::disk('local')->allFiles())->toBeEmpty();
+});
+
+test('uploads abandoned for more than a day are deleted', function () {
+    Storage::fake('local');
+    $database = Database::factory()->create();
+    $abandoned = DatabaseRestoreUpload::start($database->server->user, $database, 'old.sql', 6);
+    $recent = DatabaseRestoreUpload::start($database->server->user, $database, 'new.sql', 6);
+
+    foreach (['part', 'json'] as $extension) {
+        touch(Storage::disk('local')->path(DatabaseRestoreUpload::DIRECTORY."/{$abandoned->id}.{$extension}"), now()->subHours(25)->getTimestamp());
+    }
+
+    DatabaseRestoreUpload::prune();
+
+    expect(DatabaseRestoreUpload::find($abandoned->id, $database->server->user, $database))->toBeNull()
+        ->and(DatabaseRestoreUpload::find($recent->id, $database->server->user, $database))->not->toBeNull();
 });
 
 test('viewers cannot restore a database', function () {
@@ -218,7 +363,7 @@ test('viewers cannot restore a database', function () {
         ->call('startRestore', $database->id)
         ->assertSet('restoringDatabaseId', null)
         ->set('restoringDatabaseId', $database->id)
-        ->set('restoreFile', UploadedFile::fake()->createWithContent('dump.sql', 'SELECT 1;'))
+        ->set('restoreUpload', str_repeat('a', 40))
         ->set('restoreConfirmation', $database->name)
         ->call('restoreDatabase')
         ->assertDontSeeHtml('arrow-up-tray');
