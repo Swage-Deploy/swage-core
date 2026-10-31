@@ -41,7 +41,7 @@ test('octane sites reload their workers after APP_URL changes', function () {
 
     ObtainCertificate::dispatchSync($certificate);
 
-    expect($shell->lastScript())->toContain("artisan' octane:reload");
+    expect($shell->lastScript())->toContain("artisan' octane:reload --server=frankenphp");
 });
 
 test('removing a certificate switches the site\'s APP_URL back to http', function () {

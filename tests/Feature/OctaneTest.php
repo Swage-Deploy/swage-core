@@ -145,7 +145,7 @@ test('octane deployments reload workers gracefully and leave the octane server o
     $script = DeployScript::render($site);
 
     expect($script)
-        ->toContain('artisan" octane:reload')
+        ->toContain('artisan" octane:reload --server=frankenphp')
         ->toContain("swage_restart_daemon {$worker->id}\n")
         ->not->toContain("swage_restart_daemon {$octane->id}\n")
         ->not->toContain('; swage_reload_php )');

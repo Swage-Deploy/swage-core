@@ -51,7 +51,7 @@ test('octane sites reload their workers after the environment is saved', functio
         ->call('save');
 
     expect($shell->lastScript())
-        ->toContain("artisan' octane:reload")
+        ->toContain("artisan' octane:reload --server=frankenphp")
         ->not->toContain('fpm reload');
 });
 

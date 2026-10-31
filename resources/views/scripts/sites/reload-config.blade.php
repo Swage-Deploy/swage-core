@@ -4,7 +4,7 @@ if [ -f '{!! $site->currentPath() !!}/bootstrap/cache/config.php' ]; then
         || echo "Warning: the config cache could not be rebuilt. Deploy the site to pick up the change."
 fi
 @if ($site->octane)
-sudo -u {!! $site->systemUser() !!} -H {!! $site->php_version->binary() !!} '{!! $site->currentPath() !!}/artisan' octane:reload || true
+sudo -u {!! $site->systemUser() !!} -H {!! $site->php_version->binary() !!} '{!! $site->currentPath() !!}/artisan' octane:reload --server={!! App\Sites\SiteCommands::OCTANE_SERVER !!} || true
 @else
 systemctl reload {!! $site->php_version->fpmService() !!}
 @endif

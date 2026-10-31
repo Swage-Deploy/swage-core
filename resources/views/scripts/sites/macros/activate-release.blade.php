@@ -7,7 +7,7 @@ export SWAGE_RELEASE_ACTIVATED=1
 ls -1dt "$SWAGE_SITE_PATH"/releases/*/ | tail -n +{!! config('swage.releases_to_keep') + 1 !!} | xargs -r rm -rf
 @elseif ($site->octane)
 echo "Gracefully reloading Octane workers"
-php "$SWAGE_RELEASE_DIRECTORY/artisan" octane:reload
+php "$SWAGE_RELEASE_DIRECTORY/artisan" octane:reload --server={!! App\Sites\SiteCommands::OCTANE_SERVER !!}
 @else
 echo "Reloading PHP-FPM"
 ( flock -w 10 9 || exit 1; swage_reload_php ) 9> "/tmp/swage-fpm-$(id -un).lock"

@@ -12,7 +12,7 @@ if [ -f '{!! $site->currentPath() !!}/artisan' ]; then
 fi
 @endif
 @if ($site->octane)
-sudo -u {!! $site->systemUser() !!} -H {!! $site->php_version->binary() !!} '{!! $site->currentPath() !!}/artisan' octane:reload || true
+sudo -u {!! $site->systemUser() !!} -H {!! $site->php_version->binary() !!} '{!! $site->currentPath() !!}/artisan' octane:reload --server={!! App\Sites\SiteCommands::OCTANE_SERVER !!} || true
 @else
 service {!! $site->php_version->fpmService() !!} reload
 @endif
