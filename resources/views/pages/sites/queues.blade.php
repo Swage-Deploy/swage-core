@@ -1,6 +1,7 @@
 <?php
 
 use App\Actions\Sites\CreateQueueWorker;
+use App\Actions\Sites\SetReverb;
 use App\Actions\Sites\SetScheduler;
 use App\Enums\ResourceStatus;
 use App\Jobs\InstallDaemon;
@@ -9,6 +10,7 @@ use App\Models\Daemon;
 use App\Models\ScheduledJob;
 use App\Models\Server;
 use App\Models\Site;
+use App\Ssh\RemoteShell;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Livewire\Attributes\Computed;
@@ -31,6 +33,11 @@ new class extends Component {
 
     public int $tries = 3;
 
+    /**
+     * Whether the site's live release has laravel/reverb, once checked. Null until then, or when the server cannot say.
+     */
+    public ?bool $reverbInstalled = null;
+
 
     public function mount(): void
     {
@@ -50,7 +57,13 @@ new class extends Component {
     #[Computed]
     public function daemons(): Collection
     {
-        return $this->site->daemons()->latest()->get();
+        return $this->site->daemons()->latest()->get()->reject->isReverb();
+    }
+
+    #[Computed]
+    public function reverbDaemon(): ?Daemon
+    {
+        return $this->site->daemons()->get()->first->isReverb();
     }
 
     #[Computed]
@@ -86,6 +99,26 @@ new class extends Component {
         RemoveDaemon::dispatch($daemon);
     }
 
+    /**
+     * Check the site's live release for laravel/reverb, after the page has loaded.
+     */
+    public function checkReverb(RemoteShell $shell): void
+    {
+        $this->reverbInstalled = SetReverb::installed($this->site, $shell);
+    }
+
+    public function toggleReverb(SetReverb $setReverb): void
+    {
+        $this->authorize('update', $this->site);
+
+        $setReverb->handle($this->site, ! $this->site->reverb);
+
+        unset($this->reverbDaemon);
+        Flux::toast(variant: 'success', text: $this->site->reverb
+            ? __('Starting Reverb. Deploy the site afterwards so its front end is built with the new settings.')
+            : __('Stopping Reverb.'));
+    }
+
     public function toggleScheduler(SetScheduler $setScheduler): void
     {
         $this->authorize('update', $this->site);
@@ -96,7 +129,7 @@ new class extends Component {
     }
 }; ?>
 
-<div @if ($this->daemons->contains(fn ($daemon) => $daemon->status->isBusy()) || $this->scheduler?->status->isBusy()) wire:poll.3s @endif>
+<div wire:init="checkReverb" @if ($this->daemons->contains(fn ($daemon) => $daemon->status->isBusy()) || $this->scheduler?->status->isBusy() || $this->reverbDaemon?->status->isBusy() || ($site->reverb && $site->status->isBusy())) wire:poll.3s @endif>
     <x-pages::sites.layout :site="$site">
         <div class="flex flex-col gap-6">
             <x-panel icon="clock" :heading="__('Laravel scheduler')" :description="__('Runs :command every minute.', ['command' => 'php artisan schedule:run'])">
@@ -111,6 +144,26 @@ new class extends Component {
                     @endif
                 </x-slot:actions>
             </x-panel>
+
+            @if ($site->reverb || $this->reverbInstalled)
+                <x-panel icon="signal" :heading="__('Laravel Reverb')" :description="$site->reverb_port
+                    ? __('Runs :command on port :port, with WebSocket traffic to /app and /apps sent to it.', ['command' => 'php artisan reverb:start', 'port' => $site->reverb_port])
+                    : __('The site uses laravel/reverb. Enabling it runs :command on a port of its own, with WebSocket traffic to /app and /apps sent to it.', ['command' => 'php artisan reverb:start'])">
+                    <x-slot:actions>
+                        @if ($site->reverb)
+                            @php($status = $site->status->isBusy() ? $site->status : ($this->reverbDaemon?->status ?? $site->status))
+                            <x-status :color="$status->color()" :label="$status === ResourceStatus::Installed ? __('Enabled') : $status->label()" class="me-2" />
+                            @if ($this->reverbDaemon)
+                                <flux:button size="sm" icon="document-text" :href="route('servers.sites.logs', [$server, $site, 'log' => 'daemon-'.$this->reverbDaemon->id])" wire:navigate>{{ __('View log') }}</flux:button>
+                            @endif
+                            <flux:button size="sm" wire:click="toggleReverb" :disabled="$status->isBusy()">{{ __('Disable') }}</flux:button>
+                        @else
+                            <x-status :label="__('Disabled')" class="me-2" />
+                            <flux:button size="sm" variant="primary" wire:click="toggleReverb" :disabled="$site->status->isBusy()">{{ __('Enable Reverb') }}</flux:button>
+                        @endif
+                    </x-slot:actions>
+                </x-panel>
+            @endif
 
             <x-panel icon="queue-list" :heading="__('Queue workers')" :description="__('Restarted automatically by $RESTART_QUEUES() in the deploy script.')" flush>
                 <x-slot:actions>

@@ -29,6 +29,8 @@ class SiteResource extends JsonResource
             'system_user' => $this->systemUser(),
             'zero_downtime' => $this->zero_downtime,
             'octane' => $this->octane,
+            'reverb' => $this->reverb,
+            'reverb_port' => $this->reverb_port,
             'private_redis' => $this->private_redis,
             'repository' => $this->hasRepository() ? [
                 'source' => $this->source_control,

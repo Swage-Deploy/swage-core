@@ -59,6 +59,14 @@ class Daemon extends Model
     }
 
     /**
+     * Determine if the daemon is a site's Reverb server.
+     */
+    public function isReverb(): bool
+    {
+        return str_contains($this->command, 'artisan reverb:start');
+    }
+
+    /**
      * Get the Supervisor program name.
      */
     public function programName(): string

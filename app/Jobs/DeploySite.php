@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Actions\Sites\SetReverb;
 use App\Deployments\DeployScript;
 use App\Enums\DeploymentStatus;
 use App\Enums\ResourceStatus;
@@ -12,6 +13,7 @@ use DateTimeInterface;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 class DeploySite implements ShouldQueue
@@ -95,6 +97,9 @@ class DeploySite implements ShouldQueue
 
     protected function finish(DeploymentStatus $status, string $output): void
     {
+        // A deployment can add or remove packages, so the site is checked for laravel/reverb again.
+        Cache::forget(SetReverb::packageCacheKey($this->deployment->site));
+
         foreach (app(SiteIntegrations::class)->all() as $integration) {
             $integration->deployed($this->deployment->site);
         }

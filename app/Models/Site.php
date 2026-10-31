@@ -23,7 +23,7 @@ use LogicException;
     'domain', 'directory', 'system_user', 'private_redis', 'aliases', 'web_directory', 'php_version', 'status', 'source_control',
     'repository', 'clone_url', 'branch', 'deploy_key_private', 'deploy_key_public', 'deploy_key_id', 'webhook_id',
     'webhook_secret', 'deploy_script', 'quick_deploy', 'deploy_token', 'zero_downtime', 'octane',
-    'octane_port', 'nginx_override', 'php_settings', 'install_error',
+    'octane_port', 'reverb', 'reverb_port', 'nginx_override', 'php_settings', 'install_error',
 ])]
 #[Hidden(['deploy_key_private', 'webhook_secret', 'deploy_token'])]
 class Site extends Model
@@ -39,6 +39,7 @@ class Site extends Model
     protected $attributes = [
         'zero_downtime' => true,
         'octane' => false,
+        'reverb' => false,
         'quick_deploy' => false,
         'private_redis' => false,
     ];
@@ -91,6 +92,8 @@ class Site extends Model
             'zero_downtime' => 'boolean',
             'octane' => 'boolean',
             'octane_port' => 'integer',
+            'reverb' => 'boolean',
+            'reverb_port' => 'integer',
             'private_redis' => 'boolean',
             'php_settings' => 'array',
         ];
@@ -263,6 +266,14 @@ class Site extends Model
     public function octaneDaemon(): ?Daemon
     {
         return $this->daemons->first(fn (Daemon $daemon): bool => $daemon->isOctane());
+    }
+
+    /**
+     * Get the Supervisor process running the site's Reverb server, if any.
+     */
+    public function reverbDaemon(): ?Daemon
+    {
+        return $this->daemons->first(fn (Daemon $daemon): bool => $daemon->isReverb());
     }
 
     /**

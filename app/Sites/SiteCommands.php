@@ -40,6 +40,19 @@ class SiteCommands
     }
 
     /**
+     * The Supervisor command that runs the site's Reverb server, on the local port nginx sends its WebSocket traffic to.
+     */
+    public static function reverb(Site $site): string
+    {
+        return sprintf(
+            '%s %s/artisan reverb:start --host=127.0.0.1 --port=%d --no-interaction',
+            $site->php_version->binary(),
+            $site->currentPath(),
+            $site->reverb_port,
+        );
+    }
+
+    /**
      * The Supervisor command that serves the site with Octane on FrankenPHP.
      */
     public static function octane(Site $site, int $workers): string

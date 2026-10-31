@@ -9,6 +9,7 @@ use App\Jobs\UpdateSiteConfiguration;
 use App\Models\Site;
 use App\Provisioning\ServerTuner;
 use App\Sites\SiteCommands;
+use App\Sites\SitePorts;
 use Illuminate\Support\Facades\Bus;
 use Illuminate\Validation\ValidationException;
 
@@ -46,11 +47,11 @@ class SetOctane
      */
     protected function enable(Site $site): void
     {
-        $site->update([
-            'octane' => true,
-            'octane_port' => $site->octane_port ?? $this->nextAvailablePort($site),
-            'status' => ResourceStatus::Installing,
-        ]);
+        if ($site->octane_port === null) {
+            SitePorts::assign($site, self::FIRST_PORT, fn (int $port) => $site->update(['octane_port' => $port]));
+        }
+
+        $site->update(['octane' => true, 'status' => ResourceStatus::Installing]);
 
         $daemon = $site->server->daemons()->create([
             'site_id' => $site->id,
@@ -98,12 +99,5 @@ class SetOctane
         }
 
         return $this->tuner->tune($specs, $site->server->usesMysql(), $site->server->has_redis, $site->server->usesPostgres(), $site->server->isAppServer())->php['octane_workers'];
-    }
-
-    protected function nextAvailablePort(Site $site): int
-    {
-        $highest = $site->server->sites()->whereKeyNot($site->id)->max('octane_port');
-
-        return $highest ? $highest + 1 : self::FIRST_PORT;
     }
 }

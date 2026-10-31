@@ -21,7 +21,7 @@ class DaemonFactory extends Factory
     {
         return [
             'server_id' => Server::factory(),
-            'command' => 'php8.5 /home/swage/example.com/current/artisan reverb:start',
+            'command' => 'php8.5 /home/swage/example.com/current/artisan queue:work redis --queue=default',
             'directory' => null,
             'user' => 'swage',
             'processes' => 1,

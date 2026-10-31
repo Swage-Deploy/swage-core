@@ -30,7 +30,9 @@ class LogFiles
         }
 
         foreach ($site->daemons()->oldest('id')->get() as $daemon) {
-            $logs[] = self::daemon($daemon, $daemon->isOctane() ? 'Octane' : __('Queue worker #:id', ['id' => $daemon->id]));
+            $logs[] = self::daemon($daemon, match (true) {
+                $daemon->isOctane() => 'Octane', $daemon->isReverb() => 'Reverb', default => __('Queue worker #:id', ['id' => $daemon->id])
+            });
         }
 
         $logs[] = LogFile::file('nginx-access', __('nginx access'), __('Web server'), "/var/log/nginx/{$site->directoryName()}-access.log");
