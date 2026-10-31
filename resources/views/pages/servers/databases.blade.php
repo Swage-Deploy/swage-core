@@ -136,7 +136,7 @@ new class extends Component {
         abort_unless($database->isTransferable(), 404);
 
         $this->validate([
-            'restoreFile' => ['required', 'file', 'extensions:sql,gz', 'max:524288'],
+            'restoreFile' => ['required', 'file', 'extensions:sql,gz', 'max:1048576'],
             'restoreConfirmation' => ['required', Rule::in([$database->name])],
         ], [
             'restoreFile.extensions' => __('Choose a .sql or .sql.gz file.'),
@@ -453,11 +453,24 @@ new class extends Component {
                         <flux:subheading class="mt-2">{{ __('Every table in :name is dropped, then the file is imported in their place. Export the database first if you may want its data back.', ['name' => $database->name]) }}</flux:subheading>
                     </div>
 
-                    <flux:field>
+                    <flux:field
+                        x-data="{ uploading: false, progress: 0 }"
+                        x-on:livewire-upload-start="uploading = true; progress = 0"
+                        x-on:livewire-upload-progress="progress = $event.detail.progress"
+                        x-on:livewire-upload-finish="uploading = false"
+                        x-on:livewire-upload-error="uploading = false"
+                        x-on:livewire-upload-cancel="uploading = false"
+                    >
                         <flux:label>{{ __('Dump file') }}</flux:label>
-                        <flux:description>{{ __('A .sql or .sql.gz file of this one database, up to 512 MB, such as an export from here or from mysqldump.') }}</flux:description>
+                        <flux:description>{{ __('A .sql or .sql.gz file of this one database, up to 1 GB, such as an export from here or from mysqldump.') }}</flux:description>
                         <flux:input type="file" wire:model="restoreFile" accept=".sql,.gz" />
-                        <flux:text wire:loading wire:target="restoreFile" class="text-sm">{{ __('Uploading…') }}</flux:text>
+                        <div x-show="uploading" x-cloak class="mt-3 flex flex-col gap-2">
+                            <div class="flex justify-between text-sm">
+                                <flux:text>{{ __('Uploading…') }}</flux:text>
+                                <flux:text class="tabular-nums" x-text="progress + '%'"></flux:text>
+                            </div>
+                            <flux:progress x-model="progress" />
+                        </div>
                         <flux:error name="restoreFile" />
                     </flux:field>
 

@@ -15,7 +15,7 @@ return [
 
     'temporary_file_upload' => [
         'disk' => env('LIVEWIRE_TEMPORARY_FILE_UPLOAD_DISK'),
-        'rules' => ['required', 'file', 'max:524288'],
+        'rules' => ['required', 'file', 'max:1048576'],
         'directory' => null,
         'middleware' => null,
         'preview_mimes' => [
