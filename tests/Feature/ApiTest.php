@@ -3,10 +3,13 @@
 use App\Enums\ApiAbility;
 use App\Enums\DatabaseEngine;
 use App\Enums\MemberRole;
+use App\Enums\PhpVersion;
 use App\Enums\ResourceStatus;
+use App\Enums\ServerStatus;
 use App\Jobs\CreateDatabase;
 use App\Jobs\DeploySite;
 use App\Jobs\InstallDaemon;
+use App\Jobs\InstallPhpVersion;
 use App\Jobs\InstallRepository;
 use App\Jobs\InstallScheduledJob;
 use App\Jobs\InstallSite;
@@ -511,4 +514,17 @@ test('only the server\'s owner can make daemons and scheduled jobs run as root, 
 
 test('full access does not include running commands as root', function () {
     expect(ApiAbility::all())->not->toContain('root')->toContain('daemons:write');
+});
+
+test('a php version can be installed through the api', function () {
+    Queue::fake();
+    $server = Server::factory()->create(['status' => ServerStatus::Active]);
+    withApiKey($server->user);
+
+    $this->postJson("/api/v1/servers/{$server->id}/php-versions", ['version' => '8.4'])->assertAccepted();
+    Queue::assertPushed(InstallPhpVersion::class, fn (InstallPhpVersion $job) => $job->php === PhpVersion::Php84);
+    $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('data.installing_php', '8.4');
+
+    $this->postJson("/api/v1/servers/{$server->id}/php-versions", ['version' => '8.3'])->assertConflict();
+    $this->postJson("/api/v1/servers/{$server->id}/php-versions", ['version' => '7.4'])->assertUnprocessable()->assertJsonValidationErrors('version');
 });

@@ -34,6 +34,7 @@ class ServerResource extends JsonResource
             'disk_gb' => $this->disk_gb,
             'php_versions' => $this->php_versions?->map(fn (PhpVersion $version): string => $version->value)->values(),
             'default_php_version' => $this->default_php_version,
+            'installing_php' => $this->installing_php,
             'database_engines' => array_column($this->databaseEngines(), 'value'),
             'has_pgvector' => $this->has_pgvector,
             'has_redis' => $this->has_redis,

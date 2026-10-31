@@ -1,5 +1,6 @@
 <?php
 
+use App\Actions\Servers\AddPhpVersion;
 use App\Actions\Servers\RemoveServer;
 use App\Enums\DatabaseEngine;
 use App\Enums\ServerStatus;
@@ -93,6 +94,22 @@ new class extends Component {
     }
 
     /**
+     * Install a PHP version beside the server's others, for its sites to switch to.
+     */
+    public function installPhpVersion(AddPhpVersion $addPhpVersion, string $version): void
+    {
+        $this->authorize('update', $this->server);
+
+        if (! $addPhpVersion->handle($this->server, $version)) {
+            Flux::toast(variant: 'warning', text: __('Another install is already running on this server. Try again once it finishes.'));
+
+            return;
+        }
+
+        Flux::toast(variant: 'success', text: __('Installing PHP :version. Follow along in the activity log.', ['version' => $version]));
+    }
+
+    /**
      * Install a database engine the server was provisioned without.
      */
     public function installDatabaseEngine(string $engine): void
@@ -135,12 +152,12 @@ new class extends Component {
      */
     protected function claimDatabaseInstall(string $install): bool
     {
-        $claimed = Server::query()->whereKey($this->server->id)->whereNull('installing_database')->update(['installing_database' => $install]) === 1;
+        $claimed = Server::query()->whereKey($this->server->id)->whereNull('installing_database')->whereNull('installing_php')->update(['installing_database' => $install]) === 1;
 
         $this->server->refresh();
 
         if (! $claimed) {
-            Flux::toast(variant: 'warning', text: __('Another database install is already running on this server.'));
+            Flux::toast(variant: 'warning', text: __('Another install is already running on this server. Try again once it finishes.'));
         }
 
         return $claimed;
@@ -163,7 +180,7 @@ new class extends Component {
     }
 }; ?>
 
-<div @if (in_array($server->status, [ServerStatus::Pending, ServerStatus::Provisioning]) || $server->installing_database) wire:poll.3s @endif>
+<div @if (in_array($server->status, [ServerStatus::Pending, ServerStatus::Provisioning]) || $server->installing_database || $server->installing_php) wire:poll.3s @endif>
     <x-pages::servers.layout :server="$server">
         <div class="flex flex-col gap-6">
             @if (in_array($server->status, [ServerStatus::Pending, ServerStatus::Failed]))
@@ -317,14 +334,6 @@ new class extends Component {
                     <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[180px_1fr]">
                         <dt class="text-zinc-500">{{ __('Type') }}</dt>
                         <dd>{{ $server->type->label() }}</dd>
-                        @if ($server->isAppServer())
-                            <dt class="text-zinc-500">{{ __('PHP versions') }}</dt>
-                            <dd class="flex flex-wrap gap-1.5">
-                                @foreach ($server->php_versions as $version)
-                                    <flux:badge size="sm" :color="$version === $server->default_php_version ? 'orange' : 'zinc'">{{ $version->value }}{{ $version === $server->default_php_version ? ' · '.__('default') : '' }}</flux:badge>
-                                @endforeach
-                            </dd>
-                        @endif
                         @if ($server->private_ip_address)
                             <dt class="text-zinc-500">{{ __('Private IP address') }}</dt>
                             <dd class="font-mono text-xs">{{ $server->private_ip_address }}</dd>
@@ -343,6 +352,32 @@ new class extends Component {
                         <dd>{{ $server->provisioned_at?->toDayDateTimeString() }}</dd>
                     </dl>
                 </x-panel>
+
+                @if ($server->isAppServer())
+                    <x-panel icon="code-bracket" :heading="__('PHP')" :description="__('Install another PHP version at any time, then switch sites to it in their settings. Swage then re-tunes every service to share memory with it, which restarts PHP-FPM, the databases and Redis.')">
+                        <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[180px_1fr]">
+                            <dt class="text-zinc-500">{{ __('Installed') }}</dt>
+                            <dd class="flex flex-wrap gap-1.5">
+                                @foreach ($server->php_versions as $version)
+                                    <flux:badge size="sm" :color="$version === $server->default_php_version ? 'orange' : 'zinc'">{{ $version->value }}{{ $version === $server->default_php_version ? ' · '.__('default') : '' }}</flux:badge>
+                                @endforeach
+                            </dd>
+                        </dl>
+
+                        @if ($server->installing_php)
+                            <div class="mt-4 flex items-center gap-2 text-sm text-zinc-500">
+                                <flux:icon.loading variant="mini" />
+                                {{ __('Installing PHP :version…', ['version' => $server->installing_php]) }}
+                            </div>
+                        @elseif ($server->missingPhpVersions() && auth()->user()->can('update', $server))
+                            <div class="mt-4 flex flex-wrap gap-2">
+                                @foreach ($server->missingPhpVersions() as $version)
+                                    <flux:button size="sm" icon="plus" wire:click="installPhpVersion('{{ $version->value }}')" wire:confirm="{{ __('Install PHP :version on this server? Services restart once it is installed.', ['version' => $version->value]) }}">{{ __('Install PHP :version', ['version' => $version->value]) }}</flux:button>
+                                @endforeach
+                            </div>
+                        @endif
+                    </x-panel>
+                @endif
 
                 <x-panel icon="circle-stack" :heading="__('Databases')" :description="__('Install the other engine or pgvector at any time. Swage then re-tunes every service to share memory with it, which restarts PHP-FPM, the databases and Redis.')">
                     <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[180px_1fr]">

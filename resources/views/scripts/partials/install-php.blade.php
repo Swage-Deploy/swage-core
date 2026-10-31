@@ -1,0 +1,1 @@
+apt-get install -yq {!! collect(['fpm', 'cli', 'common', 'mysql', 'pgsql', 'sqlite3', 'redis', 'mbstring', 'xml', 'curl', 'zip', 'bcmath', 'intl', 'gd', 'readline'])->map(fn ($extension) => "php{$php->value}-{$extension}")->implode(' ') !!}

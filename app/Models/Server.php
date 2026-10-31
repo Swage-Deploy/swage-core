@@ -29,7 +29,7 @@ use Illuminate\Support\Collection;
  */
 #[Fillable([
     'name', 'type', 'ip_address', 'private_ip_address', 'ssh_port', 'status', 'provision_token', 'provisioning_step',
-    'cpu_cores', 'memory_mb', 'disk_gb', 'os_version', 'php_versions', 'default_php_version',
+    'cpu_cores', 'memory_mb', 'disk_gb', 'os_version', 'php_versions', 'default_php_version', 'installing_php',
     'has_mysql', 'has_postgres', 'has_pgvector', 'installing_database', 'database_access', 'has_redis', 'ssh_private_key', 'ssh_public_key', 'host_key', 'database_password',
     'redis_password', 'tuning', 'config_overrides', 'reboot_required_at', 'reboot_required_packages', 'provisioned_at',
 ])]
@@ -201,6 +201,16 @@ class Server extends Model
     public function isAppServer(): bool
     {
         return $this->type !== ServerType::Database;
+    }
+
+    /**
+     * The supported PHP versions the server doesn't have yet.
+     *
+     * @return list<PhpVersion>
+     */
+    public function missingPhpVersions(): array
+    {
+        return array_values(array_filter(PhpVersion::cases(), fn (PhpVersion $php): bool => ! $this->php_versions?->contains($php)));
     }
 
     /**

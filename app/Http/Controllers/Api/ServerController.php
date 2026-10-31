@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Servers\AddPhpVersion;
 use App\Actions\Servers\CreateServer;
 use App\Actions\Servers\RemoveServer;
 use App\Enums\PhpVersion;
@@ -71,6 +72,20 @@ class ServerController extends Controller
         RebootServer::dispatch($server);
 
         return response()->json(['message' => __('Rebooting the server. Sites are unavailable for a minute or two while it starts again.')], Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * Install a PHP version beside the server's others, for its sites to switch to.
+     */
+    public function installPhp(Request $request, Server $server, AddPhpVersion $addPhpVersion): JsonResponse
+    {
+        Gate::authorize('update', $server);
+
+        if (! $addPhpVersion->handle($server, $request->input('version'))) {
+            return response()->json(['message' => __('Another install is already running on this server. Try again once it finishes.')], Response::HTTP_CONFLICT);
+        }
+
+        return response()->json(['message' => __('Installing PHP :version. Follow along in the activity log.', ['version' => $request->input('version')])], Response::HTTP_ACCEPTED);
     }
 
     /**

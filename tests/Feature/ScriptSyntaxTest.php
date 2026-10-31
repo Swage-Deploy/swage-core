@@ -95,6 +95,7 @@ test('server and private redis scripts are valid bash', function () {
     assertValidBash(Script::render('revoke-access', ['publicKey' => 'AAAAkey']));
     assertValidBash(Script::render('reboot-required'));
     assertValidBash(Script::render('reboot'));
+    assertValidBash(Script::render('php.install-version', ['php' => PhpVersion::Php84]));
     assertValidBash(Script::render('databases.delete', ['database' => Database::factory()->for($server)->make(['name' => 'mysql'])]));
     assertValidBash(Script::render('sites.update-environment', [
         'site' => $site->load('daemons'),
