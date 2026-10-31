@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
-use App\Actions\Servers\AddPhpVersion;
+use App\Actions\Servers\ChangePhpVersions;
 use App\Actions\Servers\CreateServer;
 use App\Actions\Servers\RemoveServer;
 use App\Enums\PhpVersion;
@@ -77,15 +77,38 @@ class ServerController extends Controller
     /**
      * Install a PHP version beside the server's others, for its sites to switch to.
      */
-    public function installPhp(Request $request, Server $server, AddPhpVersion $addPhpVersion): JsonResponse
+    public function installPhp(Request $request, Server $server, ChangePhpVersions $changePhpVersions): JsonResponse
     {
         Gate::authorize('update', $server);
 
-        if (! $addPhpVersion->handle($server, $request->input('version'))) {
-            return response()->json(['message' => __('Another install is already running on this server. Try again once it finishes.')], Response::HTTP_CONFLICT);
-        }
+        return $this->phpChangeResponse($changePhpVersions->install($server, $request->input('version')), __('Installing PHP :version. Follow along in the activity log.', ['version' => $request->input('version')]));
+    }
 
-        return response()->json(['message' => __('Installing PHP :version. Follow along in the activity log.', ['version' => $request->input('version')])], Response::HTTP_ACCEPTED);
+    /**
+     * Make an installed PHP version the one `php` runs on the command line.
+     */
+    public function makePhpDefault(Server $server, string $version, ChangePhpVersions $changePhpVersions): JsonResponse
+    {
+        Gate::authorize('update', $server);
+
+        return $this->phpChangeResponse($changePhpVersions->makeDefault($server, $version), __('Making PHP :version the default. Follow along in the activity log.', ['version' => $version]));
+    }
+
+    /**
+     * Remove a PHP version nothing on the server runs any more.
+     */
+    public function removePhp(Server $server, string $version, ChangePhpVersions $changePhpVersions): JsonResponse
+    {
+        Gate::authorize('update', $server);
+
+        return $this->phpChangeResponse($changePhpVersions->remove($server, $version), __('Removing PHP :version. Follow along in the activity log.', ['version' => $version]));
+    }
+
+    protected function phpChangeResponse(bool $started, string $message): JsonResponse
+    {
+        return $started
+            ? response()->json(['message' => $message], Response::HTTP_ACCEPTED)
+            : response()->json(['message' => __('Another install is already running on this server. Try again once it finishes.')], Response::HTTP_CONFLICT);
     }
 
     /**

@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ConfigService;
 use App\Enums\DatabaseEngine;
 use App\Enums\MemberRole;
+use App\Enums\PhpTask;
 use App\Enums\PhpVersion;
 use App\Enums\ServerStatus;
 use App\Enums\ServerType;
@@ -29,7 +30,7 @@ use Illuminate\Support\Collection;
  */
 #[Fillable([
     'name', 'type', 'ip_address', 'private_ip_address', 'ssh_port', 'status', 'provision_token', 'provisioning_step',
-    'cpu_cores', 'memory_mb', 'disk_gb', 'os_version', 'php_versions', 'default_php_version', 'installing_php',
+    'cpu_cores', 'memory_mb', 'disk_gb', 'os_version', 'php_versions', 'default_php_version', 'php_task', 'php_task_version',
     'has_mysql', 'has_postgres', 'has_pgvector', 'installing_database', 'database_access', 'has_redis', 'ssh_private_key', 'ssh_public_key', 'host_key', 'database_password',
     'redis_password', 'tuning', 'config_overrides', 'reboot_required_at', 'reboot_required_packages', 'provisioned_at',
 ])]
@@ -63,6 +64,8 @@ class Server extends Model
             'status' => ServerStatus::class,
             'php_versions' => AsEnumCollection::of(PhpVersion::class),
             'default_php_version' => PhpVersion::class,
+            'php_task' => PhpTask::class,
+            'php_task_version' => PhpVersion::class,
             'has_mysql' => 'boolean',
             'has_postgres' => 'boolean',
             'has_pgvector' => 'boolean',
@@ -211,6 +214,36 @@ class Server extends Model
     public function missingPhpVersions(): array
     {
         return array_values(array_filter(PhpVersion::cases(), fn (PhpVersion $php): bool => ! $this->php_versions?->contains($php)));
+    }
+
+    /**
+     * What on the server still runs a PHP version, which has to move to another version before it can be removed.
+     *
+     * @return list<string>
+     */
+    public function phpVersionUsers(PhpVersion $php): array
+    {
+        $runsOnIt = fn (string $command): bool => preg_match('/(^|[\s\/])'.preg_quote($php->binary(), '/').'(\s|$)/', $command) === 1;
+
+        return [
+            ...$this->sites()->where('php_version', $php->value)->orderBy('domain')->pluck('domain')->all(),
+            ...$this->daemons()->pluck('command')->filter($runsOnIt)->values()->all(),
+            ...$this->scheduledJobs()->pluck('command')->filter($runsOnIt)->values()->all(),
+        ];
+    }
+
+    /**
+     * Mark the server as running a PHP change, unless a PHP change or a database install is already running. Both use
+     * apt and re-tune the server, so they run one at a time.
+     */
+    public function claimPhpTask(PhpTask $task, PhpVersion $php): bool
+    {
+        $claimed = self::query()->whereKey($this->id)->whereNull('php_task')->whereNull('installing_database')
+            ->update(['php_task' => $task->value, 'php_task_version' => $php->value]) === 1;
+
+        $this->refresh();
+
+        return $claimed;
     }
 
     /**

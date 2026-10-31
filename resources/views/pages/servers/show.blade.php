@@ -1,8 +1,9 @@
 <?php
 
-use App\Actions\Servers\AddPhpVersion;
+use App\Actions\Servers\ChangePhpVersions;
 use App\Actions\Servers\RemoveServer;
 use App\Enums\DatabaseEngine;
+use App\Enums\PhpVersion;
 use App\Enums\ServerStatus;
 use App\Jobs\InstallDatabaseEngine;
 use App\Jobs\InstallPgvector;
@@ -14,6 +15,7 @@ use App\Provisioning\ServerTuning;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
 
@@ -94,19 +96,61 @@ new class extends Component {
     }
 
     /**
+     * How many sites run each installed PHP version, and what else on the server still runs it.
+     *
+     * @return array<string, list<string>>
+     */
+    #[Computed]
+    public function phpVersionUsers(): array
+    {
+        return $this->server->php_versions->mapWithKeys(fn (PhpVersion $php): array => [$php->value => $this->server->phpVersionUsers($php)])->all();
+    }
+
+    /**
      * Install a PHP version beside the server's others, for its sites to switch to.
      */
-    public function installPhpVersion(AddPhpVersion $addPhpVersion, string $version): void
+    public function installPhpVersion(ChangePhpVersions $changePhpVersions, string $version): void
     {
         $this->authorize('update', $this->server);
 
-        if (! $addPhpVersion->handle($this->server, $version)) {
-            Flux::toast(variant: 'warning', text: __('Another install is already running on this server. Try again once it finishes.'));
+        $this->startPhpChange($changePhpVersions->install($this->server, $version), __('Installing PHP :version. Follow along in the activity log.', ['version' => $version]));
+    }
+
+    /**
+     * Make an installed PHP version the one `php` runs on the command line.
+     */
+    public function makePhpVersionDefault(ChangePhpVersions $changePhpVersions, string $version): void
+    {
+        $this->authorize('update', $this->server);
+
+        $this->startPhpChange($changePhpVersions->makeDefault($this->server, $version), __('Making PHP :version the default. Follow along in the activity log.', ['version' => $version]));
+    }
+
+    /**
+     * Remove a PHP version nothing on the server runs any more.
+     */
+    public function removePhpVersion(ChangePhpVersions $changePhpVersions, string $version): void
+    {
+        $this->authorize('update', $this->server);
+
+        try {
+            $started = $changePhpVersions->remove($this->server, $version);
+        } catch (ValidationException $exception) {
+            Flux::toast(variant: 'danger', text: $exception->validator->errors()->first());
 
             return;
         }
 
-        Flux::toast(variant: 'success', text: __('Installing PHP :version. Follow along in the activity log.', ['version' => $version]));
+        $this->startPhpChange($started, __('Removing PHP :version. Follow along in the activity log.', ['version' => $version]));
+    }
+
+    protected function startPhpChange(bool $started, string $message): void
+    {
+        $this->server->refresh();
+
+        Flux::toast(...$started
+            ? ['variant' => 'success', 'text' => $message]
+            : ['variant' => 'warning', 'text' => __('Another install is already running on this server. Try again once it finishes.')]);
     }
 
     /**
@@ -152,7 +196,7 @@ new class extends Component {
      */
     protected function claimDatabaseInstall(string $install): bool
     {
-        $claimed = Server::query()->whereKey($this->server->id)->whereNull('installing_database')->whereNull('installing_php')->update(['installing_database' => $install]) === 1;
+        $claimed = Server::query()->whereKey($this->server->id)->whereNull('installing_database')->whereNull('php_task')->update(['installing_database' => $install]) === 1;
 
         $this->server->refresh();
 
@@ -180,7 +224,7 @@ new class extends Component {
     }
 }; ?>
 
-<div @if (in_array($server->status, [ServerStatus::Pending, ServerStatus::Provisioning]) || $server->installing_database || $server->installing_php) wire:poll.3s @endif>
+<div @if (in_array($server->status, [ServerStatus::Pending, ServerStatus::Provisioning]) || $server->installing_database || $server->php_task) wire:poll.3s @endif>
     <x-pages::servers.layout :server="$server">
         <div class="flex flex-col gap-6">
             @if (in_array($server->status, [ServerStatus::Pending, ServerStatus::Failed]))
@@ -354,22 +398,41 @@ new class extends Component {
                 </x-panel>
 
                 @if ($server->isAppServer())
-                    <x-panel icon="code-bracket" :heading="__('PHP')" :description="__('Install another PHP version at any time, then switch sites to it in their settings. Swage then re-tunes every service to share memory with it, which restarts PHP-FPM, the databases and Redis.')">
-                        <dl class="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-[180px_1fr]">
-                            <dt class="text-zinc-500">{{ __('Installed') }}</dt>
-                            <dd class="flex flex-wrap gap-1.5">
-                                @foreach ($server->php_versions as $version)
-                                    <flux:badge size="sm" :color="$version === $server->default_php_version ? 'orange' : 'zinc'">{{ $version->value }}{{ $version === $server->default_php_version ? ' · '.__('default') : '' }}</flux:badge>
-                                @endforeach
-                            </dd>
-                        </dl>
+                    @php($canUpdate = auth()->user()->can('update', $server))
+                    <x-panel icon="code-bracket" :heading="__('PHP')" :description="__('Install another PHP version at any time, then switch sites to it in their settings. Installing, removing or changing the default re-tunes every service, which restarts PHP-FPM, the databases and Redis.')">
+                        <div class="flex flex-col divide-y divide-zinc-100 text-sm dark:divide-white/5">
+                            @foreach ($server->php_versions as $version)
+                                @php($users = $this->phpVersionUsers[$version->value] ?? [])
+                                <div class="flex flex-wrap items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+                                    <div class="flex flex-wrap items-center gap-2">
+                                        <span class="font-mono font-medium">PHP {{ $version->value }}</span>
+                                        @if ($version === $server->default_php_version)
+                                            <flux:badge size="sm" color="orange">{{ __('default') }}</flux:badge>
+                                        @endif
+                                        <flux:text class="text-xs">{{ trans_choice('{0} Nothing uses it|{1} Used by :count site, worker or job|[2,*] Used by :count sites, workers or jobs', count($users)) }}</flux:text>
+                                    </div>
+                                    @if ($canUpdate && $version !== $server->default_php_version && ! $server->php_task)
+                                        <div class="flex gap-2">
+                                            <flux:button size="xs" wire:click="makePhpVersionDefault('{{ $version->value }}')" wire:confirm="{{ __('Make PHP :version the default? \'php\' on the command line and Composer run it, and its PHP-FPM pool gets the largest share of memory. Services restart.', ['version' => $version->value]) }}">{{ __('Make default') }}</flux:button>
+                                            @if ($users)
+                                                <flux:tooltip :content="__('Move :users to another version first.', ['users' => implode(', ', $users)])">
+                                                    <div><flux:button size="xs" variant="ghost" icon="trash" disabled>{{ __('Remove') }}</flux:button></div>
+                                                </flux:tooltip>
+                                            @else
+                                                <flux:button size="xs" variant="ghost" icon="trash" wire:click="removePhpVersion('{{ $version->value }}')" wire:confirm="{{ __('Remove PHP :version from this server? Its packages and settings are deleted. Services restart.', ['version' => $version->value]) }}">{{ __('Remove') }}</flux:button>
+                                            @endif
+                                        </div>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
 
-                        @if ($server->installing_php)
+                        @if ($server->php_task)
                             <div class="mt-4 flex items-center gap-2 text-sm text-zinc-500">
                                 <flux:icon.loading variant="mini" />
-                                {{ __('Installing PHP :version…', ['version' => $server->installing_php]) }}
+                                {{ $server->php_task->label($server->php_task_version) }}…
                             </div>
-                        @elseif ($server->missingPhpVersions() && auth()->user()->can('update', $server))
+                        @elseif ($server->missingPhpVersions() && $canUpdate)
                             <div class="mt-4 flex flex-wrap gap-2">
                                 @foreach ($server->missingPhpVersions() as $version)
                                     <flux:button size="sm" icon="plus" wire:click="installPhpVersion('{{ $version->value }}')" wire:confirm="{{ __('Install PHP :version on this server? Services restart once it is installed.', ['version' => $version->value]) }}">{{ __('Install PHP :version', ['version' => $version->value]) }}</flux:button>

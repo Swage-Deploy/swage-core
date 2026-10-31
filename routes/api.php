@@ -39,6 +39,8 @@ Route::prefix('v1')->name('api.')->middleware(['auth:sanctum', 'throttle:api'])-
             Route::post('reboot', [ServerController::class, 'reboot'])->name('reboot');
             Route::post('optimize', [ServerController::class, 'optimize'])->name('optimize');
             Route::post('php-versions', [ServerController::class, 'installPhp'])->name('php-versions.store');
+            Route::post('php-versions/{version}/default', [ServerController::class, 'makePhpDefault'])->name('php-versions.default');
+            Route::delete('php-versions/{version}', [ServerController::class, 'removePhp'])->name('php-versions.destroy');
         });
 
         Route::get('sites', [SiteController::class, 'index'])->middleware('abilities:sites:read')->name('sites.index');

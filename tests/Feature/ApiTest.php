@@ -3,13 +3,14 @@
 use App\Enums\ApiAbility;
 use App\Enums\DatabaseEngine;
 use App\Enums\MemberRole;
+use App\Enums\PhpTask;
 use App\Enums\PhpVersion;
 use App\Enums\ResourceStatus;
 use App\Enums\ServerStatus;
+use App\Jobs\ChangePhpVersion;
 use App\Jobs\CreateDatabase;
 use App\Jobs\DeploySite;
 use App\Jobs\InstallDaemon;
-use App\Jobs\InstallPhpVersion;
 use App\Jobs\InstallRepository;
 use App\Jobs\InstallScheduledJob;
 use App\Jobs\InstallSite;
@@ -522,9 +523,26 @@ test('a php version can be installed through the api', function () {
     withApiKey($server->user);
 
     $this->postJson("/api/v1/servers/{$server->id}/php-versions", ['version' => '8.4'])->assertAccepted();
-    Queue::assertPushed(InstallPhpVersion::class, fn (InstallPhpVersion $job) => $job->php === PhpVersion::Php84);
-    $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('data.installing_php', '8.4');
+    Queue::assertPushed(ChangePhpVersion::class, fn (ChangePhpVersion $job) => $job->php === PhpVersion::Php84);
+    $this->getJson("/api/v1/servers/{$server->id}")->assertJsonPath('data.php_task', ['action' => 'install', 'version' => '8.4']);
 
     $this->postJson("/api/v1/servers/{$server->id}/php-versions", ['version' => '8.3'])->assertConflict();
     $this->postJson("/api/v1/servers/{$server->id}/php-versions", ['version' => '7.4'])->assertUnprocessable()->assertJsonValidationErrors('version');
+});
+
+test('a php version can be made the default or removed through the api', function () {
+    Queue::fake();
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php83, PhpVersion::Php84, PhpVersion::Php85], 'default_php_version' => PhpVersion::Php85]);
+    Site::factory()->for($server)->create(['domain' => 'legacy.example.com', 'php_version' => PhpVersion::Php83]);
+    withApiKey($server->user);
+
+    $this->deleteJson("/api/v1/servers/{$server->id}/php-versions/8.3")->assertUnprocessable()->assertJsonValidationErrors(['version' => 'legacy.example.com']);
+    $this->deleteJson("/api/v1/servers/{$server->id}/php-versions/8.5")->assertUnprocessable();
+    $this->postJson("/api/v1/servers/{$server->id}/php-versions/8.5/default")->assertUnprocessable();
+    Queue::assertNothingPushed();
+
+    $this->postJson("/api/v1/servers/{$server->id}/php-versions/8.4/default")->assertAccepted();
+    Queue::assertPushed(ChangePhpVersion::class, fn (ChangePhpVersion $job) => $job->task === PhpTask::MakeDefault && $job->php === PhpVersion::Php84);
+
+    $this->deleteJson("/api/v1/servers/{$server->id}/php-versions/8.4")->assertConflict();
 });

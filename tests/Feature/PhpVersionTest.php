@@ -1,8 +1,10 @@
 <?php
 
 use App\Enums\MemberRole;
+use App\Enums\PhpTask;
 use App\Enums\PhpVersion;
 use App\Enums\ServerStatus;
+use App\Jobs\ChangePhpVersion;
 use App\Models\Server;
 use App\Models\Site;
 use App\Models\User;
@@ -28,7 +30,7 @@ test('a php version can be installed on a running server and its sites can switc
 
     expect($server->php_versions->all())->toBe([PhpVersion::Php83, PhpVersion::Php85])
         ->and($server->default_php_version)->toBe(PhpVersion::Php85)
-        ->and($server->installing_php)->toBeNull();
+        ->and($server->php_task)->toBeNull();
 
     $shell->assertRan('add-apt-repository -y ppa:ondrej/php');
     $shell->assertRan('apt-get install -yq php8.3-fpm php8.3-cli php8.3-common php8.3-mysql');
@@ -84,13 +86,13 @@ test('php cannot be installed on a database server', function () {
 
 test('only one php install runs on a server at a time', function () {
     Queue::fake();
-    $server = Server::factory()->create(['status' => ServerStatus::Active, 'installing_php' => '8.4']);
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_task' => PhpTask::Install, 'php_task_version' => PhpVersion::Php84]);
 
     Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
         ->call('installPhpVersion', '8.3');
 
     Queue::assertNothingPushed();
-    expect($server->refresh()->installing_php)->toBe('8.4');
+    expect($server->refresh()->php_task_version)->toBe(PhpVersion::Php84);
 });
 
 test('php and a database are not installed on a server at the same time', function () {
@@ -101,9 +103,9 @@ test('php and a database are not installed on a server at the same time', functi
 
     $server->update(['installing_database' => 'postgres']);
     $page->call('installPhpVersion', '8.4');
-    expect($server->refresh()->installing_php)->toBeNull();
+    expect($server->refresh()->php_task)->toBeNull();
 
-    $server->update(['installing_database' => null, 'installing_php' => '8.4']);
+    $server->update(['installing_database' => null, 'php_task' => PhpTask::Install, 'php_task_version' => PhpVersion::Php84]);
     $page->call('installDatabaseEngine', 'postgres');
     expect($server->refresh()->installing_database)->toBeNull();
 
@@ -117,7 +119,7 @@ test('a failed php install leaves the server as it was and can be tried again', 
     rescue(fn () => Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])->call('installPhpVersion', '8.4'), report: false);
 
     expect($server->refresh())
-        ->installing_php->toBeNull()
+        ->php_task->toBeNull()
         ->and($server->php_versions->all())->toBe([PhpVersion::Php85]);
 });
 
@@ -132,5 +134,94 @@ test('viewers cannot install php', function () {
         ->call('installPhpVersion', '8.4');
 
     Queue::assertNothingPushed();
-    expect($server->refresh()->installing_php)->toBeNull();
+    expect($server->refresh()->php_task)->toBeNull();
+});
+
+test('another installed php version can be made the default', function () {
+    $shell = fakeShellWithSpecs();
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php84, PhpVersion::Php85], 'default_php_version' => PhpVersion::Php85]);
+
+    Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
+        ->assertSee('Make default')
+        ->call('makePhpVersionDefault', '8.4')
+        ->assertHasNoErrors();
+
+    expect($server->refresh())
+        ->default_php_version->toBe(PhpVersion::Php84)
+        ->php_task->toBeNull()
+        ->and($server->php_versions->all())->toBe([PhpVersion::Php84, PhpVersion::Php85]);
+
+    $shell->assertRan('update-alternatives --set php /usr/bin/php8.4');
+    expect($shell->lastScript())
+        ->toContain('pm = dynamic')
+        ->toContain('systemctl restart php8.4-fpm');
+});
+
+test('the default php version cannot be made the default again or removed', function () {
+    Queue::fake();
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php84, PhpVersion::Php85], 'default_php_version' => PhpVersion::Php85]);
+
+    Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
+        ->call('makePhpVersionDefault', '8.5')
+        ->assertHasErrors('version');
+
+    Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
+        ->call('removePhpVersion', '8.5')
+        ->assertDispatched('toast-show');
+
+    Queue::assertNothingPushed();
+    expect($server->refresh()->php_task)->toBeNull();
+});
+
+test('a php version nothing uses can be removed', function () {
+    $shell = fakeShellWithSpecs();
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php83, PhpVersion::Php85], 'default_php_version' => PhpVersion::Php85]);
+    Site::factory()->for($server)->systemUser('example')->create(['php_version' => PhpVersion::Php85]);
+
+    Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
+        ->call('removePhpVersion', '8.3');
+
+    expect($server->refresh())
+        ->php_task->toBeNull()
+        ->and($server->php_versions->all())->toBe([PhpVersion::Php85]);
+
+    $shell->assertRan('systemctl disable --now php8.3-fpm');
+    $shell->assertRan('dpkg-query -W -f=\'${Package} ${Status}\n\' \'php8.3-*\' \'php8.3\'');
+    $shell->assertRan("rm -rf '/etc/php/8.3'");
+    expect($shell->lastScript())
+        ->not->toContain('/etc/php/8.3/')
+        ->toContain('systemctl restart php8.5-fpm');
+});
+
+test('a php version still in use cannot be removed', function () {
+    Queue::fake();
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php83, PhpVersion::Php84, PhpVersion::Php85], 'default_php_version' => PhpVersion::Php85]);
+    Site::factory()->for($server)->create(['domain' => 'legacy.example.com', 'php_version' => PhpVersion::Php83]);
+    $server->daemons()->create(['command' => '/usr/bin/php8.4 /opt/tool/run.php', 'user' => 'swage', 'processes' => 1]);
+
+    $page = Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
+        ->assertSee('Used by 1 site, worker or job');
+
+    $page->call('removePhpVersion', '8.3');
+    $page->call('removePhpVersion', '8.4');
+
+    Queue::assertNothingPushed();
+    expect($server->refresh()->php_versions)->toHaveCount(3)
+        ->and($server->phpVersionUsers(PhpVersion::Php83))->toBe(['legacy.example.com'])
+        ->and($server->phpVersionUsers(PhpVersion::Php84))->toBe(['/usr/bin/php8.4 /opt/tool/run.php'])
+        ->and($server->phpVersionUsers(PhpVersion::Php85))->toBe([]);
+});
+
+test('a removal stops if a site moved to the version after it was asked for', function () {
+    $shell = fakeShellWithSpecs();
+    $server = Server::factory()->create(['status' => ServerStatus::Active, 'php_versions' => [PhpVersion::Php83, PhpVersion::Php85], 'default_php_version' => PhpVersion::Php85]);
+    Site::factory()->for($server)->create(['php_version' => PhpVersion::Php83]);
+    $server->update(['php_task' => PhpTask::Remove, 'php_task_version' => PhpVersion::Php83]);
+
+    rescue(fn () => ChangePhpVersion::dispatchSync($server, PhpTask::Remove, PhpVersion::Php83), report: false);
+
+    expect($server->refresh())
+        ->php_task->toBeNull()
+        ->and($server->php_versions)->toHaveCount(2);
+    $shell->assertNothingRan();
 });
