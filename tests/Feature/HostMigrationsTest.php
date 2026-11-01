@@ -57,6 +57,7 @@ test('host scripts are valid bash', function () {
         resource_path('scripts/install-swage.sh'),
         resource_path('scripts/move-swage.sh'),
         resource_path('scripts/host/swage-host-migrate'),
+        resource_path('scripts/host/swage-change-domain'),
         resource_path('scripts/host/migrate.sh'),
         resource_path('scripts/host/lib.sh'),
         ...collect(hostMigrations())->map(fn ($name) => resource_path("scripts/host/migrations/{$name}")),
@@ -117,7 +118,67 @@ test('the installer refuses a cloudflare tunnel flag without a usable token', fu
     'missing token' => [['--cloudflare-tunnel-token'], 'needs the tunnel\'s token'],
     'token with shell characters' => [['--cloudflare-tunnel-token=abc; rm -rf /'], 'does not look like a Cloudflare Tunnel token'],
     'unknown option' => [['--tunnel'], 'Unknown option: --tunnel'],
+    'missing domain' => [['--domain'], '--domain needs a value'],
+    'domain with shell characters' => [['--domain=swage.example.com;id'], 'does not look like a domain'],
+    'email with shell characters' => [['--email', 'me@example.com$(id)'], 'does not look like an email address'],
 ]);
+
+test('the installer refuses a chosen administrator password that is too short', function () {
+    if (! Process::run('command -v bash')->successful()) {
+        $this->markTestSkipped('bash is not available to run the installer.');
+    }
+
+    $result = Process::env(['SWAGE_ADMIN_PASSWORD' => 'short'])
+        ->run(['bash', resource_path('scripts/install-swage.sh'), '--domain', 'swage.example.com']);
+
+    expect($result->exitCode())->toBe(1)
+        ->and($result->errorOutput())->toContain('SWAGE_ADMIN_PASSWORD must be at least 12 characters');
+});
+
+test('an unattended install never waits for an answer and keeps a chosen password out of arguments and the config cache', function () {
+    $installer = File::get(resource_path('scripts/install-swage.sh'));
+
+    expect($installer)
+        ->toContain("if [ ! -t 0 ]; then\n        echo \"\$2\" >&2\n        exit 1")
+        ->toContain('unset SWAGE_ADMIN_PASSWORD')
+        ->toContain('--preserve-env=SWAGE_ADMIN_PASSWORD php artisan db:seed --force')
+        ->not->toContain('set_env SWAGE_ADMIN_PASSWORD')
+        ->and(substr_count($installer, 'read -rp'))->toBe(1);
+
+    expect($installer)
+        ->toContain("--disable-unofficial-plugins)\n            UNOFFICIAL_PLUGINS=false")
+        ->toContain('set_env SWAGE_UNOFFICIAL_PLUGINS "$UNOFFICIAL_PLUGINS"');
+
+    expect(strpos($installer, 'db:seed'))->toBeLessThan(strpos($installer, 'as_app php artisan optimize'));
+});
+
+test('the domain change tool refuses bad domains and is installed by the migration runner', function (string $domain) {
+    if (! Process::run('command -v bash')->successful()) {
+        $this->markTestSkipped('bash is not available to run the script.');
+    }
+
+    $script = File::get(resource_path('scripts/host/swage-change-domain'));
+    $validation = str($script)->after('set -Eeuo pipefail')->before('set -a')->replace('$(id -u)', '0')->toString();
+    $result = Process::run(['bash', '-c', $validation, '_', $domain]);
+
+    expect($result->exitCode())->toBe(1)
+        ->and($result->errorOutput())->toContain('Usage: swage-change-domain <new domain>')
+        ->and(File::get(resource_path('scripts/host/migrate.sh')))->toContain('for tool in swage-host-migrate swage-change-domain; do');
+})->with(['', 'swage.example.com;id', 'swage example.com', '$(id).example.com']);
+
+test('the domain change tool checks dns, then updates the vhost, config and app url before moving webhooks', function () {
+    $script = File::get(resource_path('scripts/host/swage-change-domain'));
+
+    expect($script)
+        ->toContain('flock -w 600 9')
+        ->toContain('Point it here and try again.')
+        ->toContain('-d "$NEW"')
+        ->toContain("DOMAIN=\$NEW\nswage_write_vhost")
+        ->toContain('s|^APP_URL=.*|APP_URL=https://$NEW|')
+        ->toContain('certbot delete --non-interactive --cert-name "$OLD"');
+
+    expect(strpos($script, 'as_app php artisan optimize'))->toBeLessThan(strpos($script, 'swage:domain-changed'));
+});
 
 test('a cloudflare tunnel install keeps its token root only and skips lets encrypt', function () {
     $installer = File::get(resource_path('scripts/install-swage.sh'));

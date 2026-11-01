@@ -33,12 +33,15 @@ for file in "$HOST"/migrations/*.sh; do
     applied=$((applied + 1))
 done
 
-# Keep the installed runner in step with the repository. It has already handed
-# control to this script, so replacing it here is safe.
-if ! cmp -s "$HOST/swage-host-migrate" /usr/local/sbin/swage-host-migrate; then
-    install -m 755 -o root -g root "$HOST/swage-host-migrate" /usr/local/sbin/swage-host-migrate
-    echo "Updated /usr/local/sbin/swage-host-migrate"
-fi
+# Keep the installed runner and root-only tools in step with the repository.
+# The runner has already handed control to this script, so replacing it here
+# is safe.
+for tool in swage-host-migrate swage-change-domain; do
+    if ! cmp -s "$HOST/$tool" "/usr/local/sbin/$tool"; then
+        install -m 755 -o root -g root "$HOST/$tool" "/usr/local/sbin/$tool"
+        echo "Updated /usr/local/sbin/$tool"
+    fi
+done
 
 if [ "$applied" -eq 0 ]; then
     echo "Host is up to date."

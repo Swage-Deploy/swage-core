@@ -18,6 +18,21 @@
 #
 # Cloudflare then serves HTTPS, so no Let's Encrypt certificate is requested.
 #
+# To install without any prompts, such as from a script over SSH, pass the
+# domain and the administrator's email, and optionally choose the
+# administrator's password through SWAGE_ADMIN_PASSWORD rather than having one
+# generated and printed:
+#
+#   SWAGE_ADMIN_PASSWORD=<password> bash install-swage.sh --domain swage.example.com --email you@example.com
+#
+# Pass --disable-unofficial-plugins to only allow plugins from the plugin index,
+# not ones installed straight from a git repository, such as on panels hosted
+# for someone else.
+#
+# Without a terminal, the installer stops with an error wherever it would
+# otherwise wait for an answer, such as when the domain does not resolve to
+# this server yet.
+#
 # The server itself is configured by host migrations in
 # resources/scripts/host/migrations. A fresh install applies all of them, and
 # every self-update applies any added since, so changes to how the server is
@@ -44,6 +59,24 @@ SOURCE=/opt/swage
 PHP_VERSION=8.5
 NODE_VERSION=22
 CLOUDFLARE_TUNNEL_TOKEN=
+UNOFFICIAL_PLUGINS=true
+DOMAIN=
+EMAIL=
+# Taken out of the environment straight away, so composer, npm and the host migrations never see it.
+ADMIN_PASSWORD=${SWAGE_ADMIN_PASSWORD:-}
+unset SWAGE_ADMIN_PASSWORD
+
+# Reads the value of an option given as --name=value or --name value.
+option_value() {
+    if [[ "$1" == *=* ]]; then
+        printf '%s' "${1#*=}"
+    elif [ -n "${2:-}" ]; then
+        printf '%s' "$2"
+    else
+        echo "${1%%=*} needs a value." >&2
+        exit 1
+    fi
+}
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -58,6 +91,24 @@ while [ "$#" -gt 0 ]; do
             CLOUDFLARE_TUNNEL_TOKEN=$2
             shift
             ;;
+        --disable-unofficial-plugins)
+            UNOFFICIAL_PLUGINS=false
+            ;;
+        --domain=* | --email=*)
+            if [[ "$1" == --domain=* ]]; then
+                DOMAIN=$(option_value "$1")
+            else
+                EMAIL=$(option_value "$1")
+            fi
+            ;;
+        --domain | --email)
+            if [ "$1" = --domain ]; then
+                DOMAIN=$(option_value "$1" "${2:-}")
+            else
+                EMAIL=$(option_value "$1" "${2:-}")
+            fi
+            shift
+            ;;
         *)
             echo "Unknown option: $1" >&2
             exit 1
@@ -69,6 +120,30 @@ done
 # Tokens are base64. Anything else would be written into a systemd environment file as is.
 if ! [[ "$CLOUDFLARE_TUNNEL_TOKEN" =~ ^[A-Za-z0-9+/=_-]*$ ]]; then
     echo "That does not look like a Cloudflare Tunnel token." >&2
+    exit 1
+fi
+
+# Both end up in /etc/swage/swage.conf, which bash sources, and in .env, so only plain values get through.
+valid_domain() {
+    [[ "$1" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]
+}
+
+valid_email() {
+    [[ "$1" =~ ^[A-Za-z0-9._%+-]+@([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]
+}
+
+if [ -n "$DOMAIN" ] && ! valid_domain "$DOMAIN"; then
+    echo "That does not look like a domain: $DOMAIN" >&2
+    exit 1
+fi
+
+if [ -n "$EMAIL" ] && ! valid_email "$EMAIL"; then
+    echo "That does not look like an email address: $EMAIL" >&2
+    exit 1
+fi
+
+if [ -n "$ADMIN_PASSWORD" ] && { [ "${#ADMIN_PASSWORD}" -lt 12 ] || [[ "$ADMIN_PASSWORD" == *$'\n'* ]]; }; then
+    echo "SWAGE_ADMIN_PASSWORD must be at least 12 characters on a single line." >&2
     exit 1
 fi
 
@@ -113,12 +188,37 @@ if ! grep -qE '^(ssh-|ecdsa-|sk-)' /root/.ssh/authorized_keys 2> /dev/null; then
     exit 1
 fi
 
-read -rp "Domain Swage will be served from (e.g. swage.example.com): " DOMAIN
-if [ "$CLOUDFLARE_TUNNEL" = true ]; then
-    read -rp "Administrator email: " EMAIL
-else
-    read -rp "Email for Let's Encrypt notices: " EMAIL
-fi
+# Asks a question on the terminal, or stops when there is none to ask on, such as when a script runs the installer.
+ask() {
+    if [ ! -t 0 ]; then
+        echo "$2" >&2
+        exit 1
+    fi
+
+    read -rp "$1" REPLY
+}
+
+while [ -z "$DOMAIN" ]; do
+    ask "Domain Swage will be served from (e.g. swage.example.com): " "Pass the domain with --domain."
+    if valid_domain "$REPLY"; then
+        DOMAIN=$REPLY
+    else
+        echo "That does not look like a domain."
+    fi
+done
+
+while [ -z "$EMAIL" ]; do
+    if [ "$CLOUDFLARE_TUNNEL" = true ]; then
+        ask "Administrator email: " "Pass the administrator's email with --email."
+    else
+        ask "Email for Let's Encrypt notices: " "Pass the administrator's email with --email."
+    fi
+    if valid_email "$REPLY"; then
+        EMAIL=$REPLY
+    else
+        echo "That does not look like an email address."
+    fi
+done
 
 step() {
     echo
@@ -139,7 +239,7 @@ if [ "$CLOUDFLARE_TUNNEL" = false ] && [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != 
     echo
     echo "Warning: $DOMAIN resolves to '${DOMAIN_IP:-nothing}', but this server is $PUBLIC_IP."
     echo "The SSL certificate step will fail until DNS points here."
-    read -rp "Press Enter to continue anyway, or Ctrl+C to stop..."
+    ask "Press Enter to continue anyway, or Ctrl+C to stop..." "Point $DOMAIN at $PUBLIC_IP and run the installer again."
 fi
 
 # ---------------------------------------------------------------------------
@@ -182,11 +282,11 @@ if [[ "$REPOSITORY" =~ ^(git@|ssh://) ]]; then
     echo
     cat "/home/$APP_USER/.ssh/id_ed25519.pub"
     echo
-    read -rp "Press Enter once the deploy key has been added..."
+    ask "Press Enter once the deploy key has been added..." "Add the deploy key above and run the installer again."
 fi
 
 until as_app git ls-remote "$REPOSITORY" "refs/heads/$BRANCH" > /dev/null 2>&1; do
-    read -rp "Unable to read $REPOSITORY. Check the repository (and its deploy key, for a private fork) and press Enter to retry..."
+    ask "Unable to read $REPOSITORY. Check the repository (and its deploy key, for a private fork) and press Enter to retry..." "Unable to read $REPOSITORY."
 done
 
 # Swage is released through version tags, which updates follow too. Install the newest one, or the newest commit on
@@ -297,6 +397,7 @@ set_env SWAGE_PHP_FPM_SERVICE "php$PHP_VERSION-fpm"
 set_env SWAGE_CERTIFICATE_EMAIL "$EMAIL"
 set_env SWAGE_ADMIN_EMAIL "$EMAIL"
 set_env SWAGE_REQUIRE_TWO_FACTOR true
+set_env SWAGE_UNOFFICIAL_PLUGINS "$UNOFFICIAL_PLUGINS"
 
 # Behind a tunnel, Cloudflare Access may guard the public URL, so self-updates
 # check the new release through nginx's loopback listener instead.
@@ -314,10 +415,20 @@ as_app php artisan key:generate --force
 as_app npm ci
 as_app npm run build
 as_app php artisan migrate --force
-as_app php artisan optimize
 
-# Registration is disabled. This creates the administrator account and prints its password.
-as_app php artisan db:seed --force
+# Registration is disabled. This creates the administrator account and prints its password, unless one was chosen
+# through SWAGE_ADMIN_PASSWORD. That reaches the seeder through its environment alone, never its arguments, .env or the
+# log, and before optimize caches the config, which would hide it.
+PASSWORD_CHOSEN=false
+if [ -n "$ADMIN_PASSWORD" ]; then
+    PASSWORD_CHOSEN=true
+    SWAGE_ADMIN_PASSWORD=$ADMIN_PASSWORD sudo -u "$APP_USER" -H --preserve-env=SWAGE_ADMIN_PASSWORD php artisan db:seed --force
+else
+    as_app php artisan db:seed --force
+fi
+unset ADMIN_PASSWORD
+
+as_app php artisan optimize
 
 as_app ln -sfn "$RELEASE" "$APP_ROOT/current"
 
@@ -335,12 +446,20 @@ else
 fi
 echo
 echo "Next steps:"
-echo "  1. Log in at https://$DOMAIN/login with the administrator password printed above,"
+if [ "$PASSWORD_CHOSEN" = true ]; then
+    echo "  1. Log in at https://$DOMAIN/login as $EMAIL with the password you chose,"
+else
+    echo "  1. Log in at https://$DOMAIN/login with the administrator password printed above,"
+fi
 echo "     and set up two-factor authentication."
 echo "  2. Install the GitHub or GitLab plugin under Plugins → System, configure it there,"
 echo "     then connect your account under Settings → Source control."
 echo "  3. Update Swage from the Updates page, or with:"
 echo "     sudo -u $APP_USER php $APP_ROOT/current/artisan swage:update"
 echo
-echo "This output, including the administrator password, is saved to $LOG."
-echo "Delete it once the password is stored somewhere safe: rm $LOG"
+if [ "$PASSWORD_CHOSEN" = true ]; then
+    echo "This output is saved to $LOG."
+else
+    echo "This output, including the administrator password, is saved to $LOG."
+    echo "Delete it once the password is stored somewhere safe: rm $LOG"
+fi

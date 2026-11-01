@@ -938,6 +938,28 @@ test('the dashboard checks a repository, then installs the plugin at the commit 
     Queue::assertPushed(StartSelfUpdate::class);
 });
 
+test('panels installed with unofficial plugins turned off refuse plugins from a git repository', function () {
+    config(['swage.plugins.unofficial' => false]);
+    Queue::fake();
+    Process::fake();
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index')
+        ->assertDontSee('Install from a repository')
+        ->set('repositoryUrl', UNOFFICIAL_URL)
+        ->call('checkUnofficialPlugin')
+        ->assertSet('repositoryCheck', null)
+        ->call('installUnofficialPlugin');
+
+    $this->artisan('swage:plugin:install', ['--url' => UNOFFICIAL_URL, '--force' => true])
+        ->expectsOutputToContain('Installing plugins from a git repository is turned off on this panel')
+        ->assertFailed();
+
+    expect(SelfUpdate::count())->toBe(0)
+        ->and(app(PluginManifest::class)->all())->toBeEmpty();
+    Process::assertNothingRan();
+    Queue::assertNothingPushed();
+});
+
 test('changing the repository after checking it needs another check before installing', function () {
     Queue::fake();
     Process::fake(["'git' 'ls-remote' *" => PLUGIN_REFS]);

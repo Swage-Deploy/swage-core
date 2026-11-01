@@ -52,6 +52,10 @@ class SwagePluginInstall extends Command
             return $this->stop('Give the name of a plugin in the plugin index, or the git repository of another plugin with --url.');
         }
 
+        if (filled($url) && ! config('swage.plugins.unofficial')) {
+            return $this->stop('Installing plugins from a git repository is turned off on this panel. Only plugins in the plugin index can be installed.');
+        }
+
         $this->components->warn('A plugin runs inside Swage with access to everything it stores, including the SSH keys of every server. Only install plugins you trust.');
 
         try {

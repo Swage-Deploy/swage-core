@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+#
+# Moves Swage to a new domain. As root on the panel host:
+#
+#   swage-change-domain new.example.com
+#
+# Point the new domain at this server first, or behind a Cloudflare Tunnel,
+# route it to the tunnel. This requests a certificate for the new domain,
+# serves Swage from it, moves every quick deploy webhook over and removes the
+# old domain's certificate. Installed to /usr/local/sbin by the host migration
+# runner, which keeps it in step with the repository.
+#
+set -Eeuo pipefail
+
+SOURCE=/opt/swage
+CONFIG=/etc/swage/swage.conf
+NEW=${1:-}
+
+if [ "$(id -u)" -ne 0 ]; then
+    echo "swage-change-domain must run as root." >&2
+    exit 1
+fi
+
+# The domain is written into /etc/swage/swage.conf, which bash sources, and into .env, so only plain values get through.
+if ! [[ "$NEW" =~ ^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$ ]]; then
+    echo "Usage: swage-change-domain <new domain>" >&2
+    exit 1
+fi
+
+set -a
+. "$CONFIG"
+set +a
+
+. "$SOURCE/resources/scripts/host/lib.sh"
+
+OLD=$DOMAIN
+
+if [ "$NEW" = "$OLD" ]; then
+    echo "Swage is already served from $NEW."
+    exit 0
+fi
+
+# An update applying host migrations at the same time would write the vhost for the old domain.
+exec 9> /run/swage-host-migrate.lock
+flock -w 600 9
+
+if [ "${CLOUDFLARE_TUNNEL:-false}" != true ]; then
+    PUBLIC_IP=$(curl -fsS4 https://api.ipify.org || true)
+    DOMAIN_IP=$(getent ahostsv4 "$NEW" | awk 'NR == 1 { print $1 }' || true)
+
+    if [ -n "$PUBLIC_IP" ] && [ "$PUBLIC_IP" != "$DOMAIN_IP" ]; then
+        echo "$NEW resolves to '${DOMAIN_IP:-nothing}', but this server is $PUBLIC_IP. Point it here and try again." >&2
+        exit 1
+    fi
+
+    echo "==> Requesting a certificate for $NEW"
+
+    # The vhost is the only one on port 80, so it answers the challenge for the new domain too.
+    certbot certonly --webroot --non-interactive --agree-tos \
+        -m "$EMAIL" \
+        -w /var/www/letsencrypt \
+        -d "$NEW" \
+        --keep-until-expiring \
+        --deploy-hook 'systemctl reload nginx'
+fi
+
+echo "==> Serving Swage from $NEW"
+
+DOMAIN=$NEW
+swage_write_vhost
+
+sed -i -E "s|^DOMAIN=.*|DOMAIN=$NEW|" "$CONFIG"
+sed -i -E "s|^APP_URL=.*|APP_URL=https://$NEW|" "$APP_ROOT/shared/.env"
+
+cd "$APP_ROOT/current"
+as_app php artisan optimize
+systemctl reload "php$PHP_VERSION-fpm"
+supervisorctl restart 'swage-worker:*' 'swage-deployer:*'
+
+if [ "${CLOUDFLARE_TUNNEL:-false}" != true ] && [ -d "/etc/letsencrypt/live/$OLD" ]; then
+    certbot delete --non-interactive --cert-name "$OLD"
+fi
+
+if [ "${CLOUDFLARE_TUNNEL:-false}" = true ]; then
+    echo
+    echo "Behind a Cloudflare Tunnel: change the tunnel's public hostname from $OLD to $NEW in Cloudflare too."
+fi
+
+echo
+echo "==> Moving quick deploy webhooks"
+as_app php artisan swage:domain-changed --from="$OLD"

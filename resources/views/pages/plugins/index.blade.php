@@ -311,6 +311,7 @@ new #[Title('Plugins')] class extends Component {
     public function checkUnofficialPlugin(PluginInstaller $installer): void
     {
         $this->authorize('administer');
+        abort_unless(config('swage.plugins.unofficial'), 403);
 
         $this->repositoryCheck = null;
 
@@ -348,6 +349,7 @@ new #[Title('Plugins')] class extends Component {
     public function installUnofficialPlugin(): void
     {
         $this->authorize('administer');
+        abort_unless(config('swage.plugins.unofficial'), 403);
 
         abort_if($this->repositoryCheck === null, 409);
 
@@ -407,9 +409,11 @@ new #[Title('Plugins')] class extends Component {
                 <flux:heading size="xl" level="1" class="tracking-tight">{{ __('Plugins') }}</flux:heading>
                 <flux:subheading>{{ __('Plugins extend Swage. Installing, updating or removing one rebuilds Swage with the change, and the running release stays live if the rebuild fails.') }}</flux:subheading>
             </div>
-            <flux:modal.trigger name="install-from-repository">
-                <flux:button size="sm" icon="code-bracket">{{ __('Install from a repository') }}</flux:button>
-            </flux:modal.trigger>
+            @if (config('swage.plugins.unofficial'))
+                <flux:modal.trigger name="install-from-repository">
+                    <flux:button size="sm" icon="code-bracket">{{ __('Install from a repository') }}</flux:button>
+                </flux:modal.trigger>
+            @endif
         </div>
     </div>
 
@@ -633,39 +637,41 @@ new #[Title('Plugins')] class extends Component {
         </x-panel>
     @endif
 
-    <flux:modal name="install-from-repository" class="w-full max-w-lg">
-        <form wire:submit="checkUnofficialPlugin" class="flex flex-col gap-5">
-            <div>
-                <flux:heading size="lg">{{ __('Install from a repository') }}</flux:heading>
-                <flux:text class="mt-1">{{ __('Install a plugin that is not in the plugin index straight from its git repository. It is updated from that repository\'s version tags.') }}</flux:text>
-            </div>
-
-            <flux:callout icon="exclamation-triangle" color="amber">
-                <flux:callout.text>{{ __('Swage has not reviewed this plugin and does not check its signature. It runs inside Swage with access to everything Swage stores, including the SSH keys of every server. Only install plugins from people you trust.') }}</flux:callout.text>
-            </flux:callout>
-
-            <flux:input wire:model="repositoryUrl" :label="__('Git URL')" placeholder="https://github.com/you/swage-plugin" class="font-mono" />
-            <flux:input wire:model="repositoryRef" :label="__('Tag or branch')" :placeholder="__('The newest version tag')" class="font-mono" />
-
-            @if ($repositoryCheck)
-                <div class="rounded-lg border border-zinc-200 p-3 font-mono text-xs dark:border-white/10">
-                    {{ __(':ref at :commit', ['ref' => $repositoryCheck['ref'], 'commit' => $repositoryCheck['commit']]) }}
+    @if (config('swage.plugins.unofficial'))
+        <flux:modal name="install-from-repository" class="w-full max-w-lg">
+            <form wire:submit="checkUnofficialPlugin" class="flex flex-col gap-5">
+                <div>
+                    <flux:heading size="lg">{{ __('Install from a repository') }}</flux:heading>
+                    <flux:text class="mt-1">{{ __('Install a plugin that is not in the plugin index straight from its git repository. It is updated from that repository\'s version tags.') }}</flux:text>
                 </div>
-            @endif
 
-            <div class="flex justify-end gap-2">
-                <flux:modal.close>
-                    <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
-                </flux:modal.close>
+                <flux:callout icon="exclamation-triangle" color="amber">
+                    <flux:callout.text>{{ __('Swage has not reviewed this plugin and does not check its signature. It runs inside Swage with access to everything Swage stores, including the SSH keys of every server. Only install plugins from people you trust.') }}</flux:callout.text>
+                </flux:callout>
+
+                <flux:input wire:model="repositoryUrl" :label="__('Git URL')" placeholder="https://github.com/you/swage-plugin" class="font-mono" />
+                <flux:input wire:model="repositoryRef" :label="__('Tag or branch')" :placeholder="__('The newest version tag')" class="font-mono" />
+
                 @if ($repositoryCheck)
-                    <flux:button type="button" variant="primary" icon="arrow-down-tray" wire:click="installUnofficialPlugin"
-                        wire:confirm="{{ __('Install the plugin from :url at :ref and rebuild Swage with it? It will have access to everything Swage stores.', ['url' => $repositoryCheck['url'], 'ref' => $repositoryCheck['ref']]) }}">{{ __('Install') }}</flux:button>
-                @else
-                    <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="checkUnofficialPlugin">{{ __('Check repository') }}</flux:button>
+                    <div class="rounded-lg border border-zinc-200 p-3 font-mono text-xs dark:border-white/10">
+                        {{ __(':ref at :commit', ['ref' => $repositoryCheck['ref'], 'commit' => $repositoryCheck['commit']]) }}
+                    </div>
                 @endif
-            </div>
-        </form>
-    </flux:modal>
+
+                <div class="flex justify-end gap-2">
+                    <flux:modal.close>
+                        <flux:button variant="ghost">{{ __('Cancel') }}</flux:button>
+                    </flux:modal.close>
+                    @if ($repositoryCheck)
+                        <flux:button type="button" variant="primary" icon="arrow-down-tray" wire:click="installUnofficialPlugin"
+                            wire:confirm="{{ __('Install the plugin from :url at :ref and rebuild Swage with it? It will have access to everything Swage stores.', ['url' => $repositoryCheck['url'], 'ref' => $repositoryCheck['ref']]) }}">{{ __('Install') }}</flux:button>
+                    @else
+                        <flux:button type="submit" variant="primary" wire:loading.attr="disabled" wire:target="checkUnofficialPlugin">{{ __('Check repository') }}</flux:button>
+                    @endif
+                </div>
+            </form>
+        </flux:modal>
+    @endif
 
     <flux:modal name="plugin-operation" class="w-full max-w-4xl">
         @if ($selected = $this->viewingOperation)

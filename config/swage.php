@@ -131,6 +131,10 @@ return [
         'index' => env('SWAGE_PLUGIN_INDEX', 'https://raw.githubusercontent.com/Swage-Deploy/plugin-repo/main/plugins.json'),
         'manifest' => env('SWAGE_PLUGIN_MANIFEST', storage_path('app/plugins.json')),
         'directory' => env('SWAGE_PLUGIN_DIRECTORY', storage_path('app/plugins')),
+
+        // Whether administrators may install plugins straight from a git repository they enter. Hosted panels, which
+        // are installed with --disable-unofficial-plugins, only take plugins from the index.
+        'unofficial' => (bool) env('SWAGE_UNOFFICIAL_PLUGINS', true),
     ],
 
     /*
