@@ -101,16 +101,20 @@ class ProvisionController extends Controller
         return response()->noContent();
     }
 
+    /**
+     * Find the server a provisioning command was made for. Commands expire, so one that leaks later starts nothing.
+     */
     protected function awaitingProvisioning(string $token): Server
     {
-        return Server::where('provision_token', $token)
+        return Server::where('provision_token_hash', Server::hashProvisionToken($token))
             ->whereIn('status', [ServerStatus::Pending, ServerStatus::Failed])
+            ->where('provision_token_expires_at', '>', now())
             ->firstOrFail();
     }
 
     protected function provisioning(string $token): Server
     {
-        return Server::where('provision_token', $token)
+        return Server::where('provision_token_hash', Server::hashProvisionToken($token))
             ->where('status', ServerStatus::Provisioning)
             ->firstOrFail();
     }

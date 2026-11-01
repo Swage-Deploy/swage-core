@@ -24,6 +24,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * @property Collection<int, PhpVersion> $php_versions
@@ -34,7 +35,7 @@ use Illuminate\Support\Collection;
     'has_mysql', 'has_postgres', 'has_pgvector', 'installing_database', 'database_access', 'has_redis', 'ssh_private_key', 'ssh_public_key', 'host_key', 'database_password',
     'redis_password', 'tuning', 'config_overrides', 'reboot_required_at', 'reboot_required_packages', 'provisioned_at',
 ])]
-#[Hidden(['provision_token', 'ssh_private_key', 'database_password', 'redis_password'])]
+#[Hidden(['provision_token', 'provision_token_hash', 'ssh_private_key', 'database_password', 'redis_password'])]
 class Server extends Model
 {
     /** @use HasFactory<ServerFactory> */
@@ -51,6 +52,32 @@ class Server extends Model
      * How long a provisioning server may go without reporting progress before it is treated as stalled.
      */
     public const int PROVISIONING_STALL_MINUTES = 20;
+
+    /**
+     * How long a provisioning command works for before the server stops serving its scripts to it.
+     */
+    public const int PROVISION_TOKEN_HOURS = 24;
+
+    /**
+     * Keep a hash of the provisioning token to find the server by, and start its expiry, whenever a token is issued.
+     * The token itself is stored encrypted, so reading the database is not enough to fetch a server's scripts.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Server $server): void {
+            if ($server->isDirty('provision_token')) {
+                $token = $server->provision_token;
+
+                $server->provision_token_hash = $token === null ? null : self::hashProvisionToken($token);
+                $server->provision_token_expires_at = $token === null ? null : now()->addHours(self::PROVISION_TOKEN_HOURS);
+            }
+        });
+    }
+
+    public static function hashProvisionToken(string $token): string
+    {
+        return hash('sha256', $token);
+    }
 
     /**
      * Get the attributes that should be cast.
@@ -71,6 +98,8 @@ class Server extends Model
             'has_pgvector' => 'boolean',
             'database_access' => 'array',
             'has_redis' => 'boolean',
+            'provision_token' => 'encrypted',
+            'provision_token_expires_at' => 'datetime',
             'ssh_private_key' => 'encrypted',
             'database_password' => 'encrypted',
             'redis_password' => 'encrypted',
@@ -404,16 +433,30 @@ class Server extends Model
     }
 
     /**
-     * Get the one-line command the user runs as root to begin provisioning.
+     * Get the one-line command the user runs as root to begin provisioning. A command that has expired is replaced with
+     * a new one, so the command shown always works.
      */
     public function provisionCommand(): string
     {
+        if ($this->provisionTokenHasExpired()) {
+            $this->update(['provision_token' => Str::random(64)]);
+        }
+
         $url = route('provision.script', $this->provision_token);
         $proto = $this->provisionsOverHttps() ? " --proto '=https'" : '';
 
         // Minimal images can lack curl, which fetches the script here and reports progress from it, so it is installed
         // first. The script is saved to a file only root can write, with a name no one can know in advance.
         return "(command -v curl > /dev/null || (apt-get update -qq && apt-get install -yqq curl > /dev/null)) && f=\$(mktemp) && curl -fsSL{$proto} '{$url}' -o \"\$f\" && bash \"\$f\"";
+    }
+
+    /**
+     * Determine if the server is waiting to be provisioned with a command that no longer works.
+     */
+    public function provisionTokenHasExpired(): bool
+    {
+        return in_array($this->status, [ServerStatus::Pending, ServerStatus::Failed], true)
+            && ($this->provision_token_expires_at?->isPast() ?? true);
     }
 
     /**

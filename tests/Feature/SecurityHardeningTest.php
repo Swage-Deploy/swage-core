@@ -16,6 +16,7 @@ use App\Models\User;
 use App\Sites\SiteEnvironment;
 use App\Ssh\PhpseclibRemoteShell;
 use App\Ssh\ScriptResult;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 use phpseclib4\Net\SSH2;
@@ -112,6 +113,43 @@ test('the provision token stops working once provisioning finishes and changes w
     expect($failed->fresh()->provision_token)->not->toBe($token)->toHaveLength(64);
     $this->get(route('provision.script', $token))->assertNotFound();
     $this->get(route('provision.script', $failed->fresh()->provision_token))->assertOk();
+});
+
+test('the provision token is stored encrypted and servers are found by its hash', function () {
+    $server = Server::factory()->pending()->create();
+    $row = DB::table('servers')->find($server->id);
+
+    expect($row->provision_token)->not->toBe($server->provision_token)
+        ->and($row->provision_token_hash)->toBe(hash('sha256', $server->provision_token))
+        ->and($server->toArray())->not->toHaveKeys(['provision_token', 'provision_token_hash']);
+
+    $this->get(route('provision.script', $server->provision_token))->assertOk();
+});
+
+test('a provisioning command expires, and a new one is made when it is shown', function () {
+    $server = Server::factory()->pending()->create();
+    $token = $server->provision_token;
+
+    $this->travel(Server::PROVISION_TOKEN_HOURS)->hours();
+
+    $this->get(route('provision.script', $token))->assertNotFound();
+    $this->post(route('provision.specs', $token), [])->assertNotFound();
+
+    expect($server->provisionCommand())->not->toContain($token)
+        ->and($server->provision_token)->not->toBe($token);
+
+    $this->get(route('provision.script', $server->provision_token))->assertOk();
+});
+
+test('a server that is provisioning keeps its token past the expiry, so a long run can still report back', function () {
+    $server = Server::factory()->provisioning()->create();
+    $token = $server->provision_token;
+
+    $this->travel(Server::PROVISION_TOKEN_HOURS + 1)->hours();
+
+    expect($server->provisionTokenHasExpired())->toBeFalse();
+
+    $this->post(route('provision.progress', $token), ['step' => 'Installing PHP'])->assertNoContent();
 });
 
 test('sites without a database user get blank mysql credentials instead of swage\'s account', function () {
