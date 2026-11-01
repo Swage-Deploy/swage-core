@@ -6,6 +6,7 @@ use App\Jobs\UpdateSiteConfiguration;
 use App\Models\Server;
 use App\Models\Site;
 use App\Provisioning\ServerTuner;
+use App\Sites\SitePhpPool;
 use App\Ssh\Script;
 use App\Ssh\ScriptResult;
 use Livewire\Livewire;
@@ -83,7 +84,46 @@ test('php settings that cannot go in the pool config are rejected', function (st
     'a quoted value' => ['directives', 'display_errors = "Off"'],
     'a value with an equals sign' => ['directives', 'display_errors = a=b'],
     'a managed setting' => ['directives', 'post_max_size = 1G'],
+    'no workers' => ['max_children', '0'],
+    'too many workers' => ['max_children', '5000'],
+    'a pool setting' => ['directives', 'pm.max_children = 50'],
 ]);
+
+test('a site\'s worker limit replaces the server\'s in its pool', function () {
+    $shell = fakeShell();
+    $site = Site::factory()->systemUser('example')->create(['php_version' => PhpVersion::Php85, 'status' => ResourceStatus::Installed]);
+
+    Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
+        ->set('max_children', '60')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($shell->lastScript())
+        ->toContain("pm = ondemand\npm.max_children = 60\npm.process_idle_timeout = 10s\n")
+        ->not->toContain('php_value[')
+        ->and($site->fresh()->php_settings)->toBe(['max_children' => 60]);
+});
+
+test('a site without a worker limit uses the server\'s', function () {
+    $site = Site::factory()->systemUser('example')->create();
+    $pool = SitePhpPool::for($site);
+
+    expect($pool->maxChildren())->toBe($pool->defaultMaxChildren())
+        ->and($pool->config())->toContain("pm.max_children = {$pool->defaultMaxChildren()}\n");
+});
+
+test('a worker limit that could outgrow the server\'s memory is warned about', function () {
+    $site = Site::factory()->systemUser('example')->create(['status' => ResourceStatus::Installed]);
+    $pool = SitePhpPool::for($site);
+    $within = intdiv($pool->memoryBudgetMb(), ServerTuner::PHP_PROCESS_SIZE_MB);
+
+    Livewire::actingAs($site->server->user)->test('pages::sites.php', ['server' => $site->server, 'site' => $site])
+        ->assertSee((string) $pool->defaultMaxChildren())
+        ->set('max_children', (string) $within)
+        ->assertDontSee('could run out of memory')
+        ->set('max_children', (string) ($within + 1))
+        ->assertSee('could run out of memory');
+});
 
 test('rejected php settings keep the previous ones', function () {
     fakeShell()->respondTo('php-fpm8.5 -t', new ScriptResult(1, "ERROR: failed to load configuration file\nRestoring the previous configuration."));
@@ -124,15 +164,15 @@ test('php settings can only be applied to an installed site', function () {
 
 test('php settings are kept when swage rewrites the site\'s pool', function () {
     $shell = fakeShell();
-    $site = Site::factory()->systemUser('example')->create(['php_settings' => ['upload_max_filesize' => '1G']]);
+    $site = Site::factory()->systemUser('example')->create(['php_settings' => ['upload_max_filesize' => '1G', 'max_children' => 60]]);
 
     UpdateSiteConfiguration::dispatchSync($site);
 
-    expect($shell->lastScript())->toContain('php_value[upload_max_filesize] = 1G')->toContain('client_max_body_size 1g;');
+    expect($shell->lastScript())->toContain('php_value[upload_max_filesize] = 1G')->toContain('pm.max_children = 60')->toContain('client_max_body_size 1g;');
 
     $tuning = (new ServerTuner)->tune($site->server->specs(), withMysql: true, withRedis: true);
 
-    expect(Script::render('optimize-server', ['server' => $site->server, 'tuning' => $tuning]))->toContain('php_value[upload_max_filesize] = 1G');
+    expect(Script::render('optimize-server', ['server' => $site->server, 'tuning' => $tuning]))->toContain('php_value[upload_max_filesize] = 1G')->toContain('pm.max_children = 60');
 });
 
 test('php settings on another user\'s server cannot be changed', function () {

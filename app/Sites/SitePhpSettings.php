@@ -9,7 +9,8 @@ use Illuminate\Validation\ValidationException;
  * The PHP settings a site's web requests run with, on top of the server's php.ini.
  *
  * They are written into the site's PHP-FPM pool as php_value lines, so the application can still raise them with
- * ini_set(). Queue workers and the scheduler run on the command line and keep the server's settings.
+ * ini_set(). Queue workers and the scheduler run on the command line and keep the server's settings. The pool's
+ * worker limit is kept here too, since it belongs to the same pool.
  */
 final class SitePhpSettings
 {
@@ -17,6 +18,8 @@ final class SitePhpSettings
      * Settings that have fields of their own, so they cannot also be given as other directives.
      */
     public const array MANAGED = ['memory_limit', 'upload_max_filesize', 'post_max_size', 'max_execution_time', 'max_input_vars'];
+
+    public const int MAX_WORKERS = 1000;
 
     public const string SIZE_PATTERN = '/^[1-9][0-9]{0,5}[KMG]?$/iD';
 
@@ -34,7 +37,7 @@ final class SitePhpSettings
     private const int NGINX_DEFAULT_READ_TIMEOUT = 60;
 
     /**
-     * @param  array{memory_limit?: string, upload_max_filesize?: string, max_execution_time?: int, max_input_vars?: int, directives?: array<string, string>}  $settings
+     * @param  array{memory_limit?: string, upload_max_filesize?: string, max_execution_time?: int, max_input_vars?: int, max_children?: int, directives?: array<string, string>}  $settings
      */
     public function __construct(private readonly array $settings) {}
 
@@ -55,6 +58,7 @@ final class SitePhpSettings
             'upload_max_filesize' => ['nullable', 'string', 'max:10', 'regex:'.self::SIZE_PATTERN],
             'max_execution_time' => ['nullable', 'integer', 'between:1,3600'],
             'max_input_vars' => ['nullable', 'integer', 'between:1,1000000'],
+            'max_children' => ['nullable', 'integer', 'between:1,'.self::MAX_WORKERS],
             'directives' => ['nullable', 'string', 'max:5000'],
         ];
     }
@@ -62,8 +66,8 @@ final class SitePhpSettings
     /**
      * Build the settings to store from validated fields, or null when every field is empty.
      *
-     * @param  array{memory_limit?: ?string, upload_max_filesize?: ?string, max_execution_time?: int|string|null, max_input_vars?: int|string|null, directives?: ?string}  $fields
-     * @return array{memory_limit?: string, upload_max_filesize?: string, max_execution_time?: int, max_input_vars?: int, directives?: array<string, string>}|null
+     * @param  array{memory_limit?: ?string, upload_max_filesize?: ?string, max_execution_time?: int|string|null, max_input_vars?: int|string|null, max_children?: int|string|null, directives?: ?string}  $fields
+     * @return array{memory_limit?: string, upload_max_filesize?: string, max_execution_time?: int, max_input_vars?: int, max_children?: int, directives?: array<string, string>}|null
      *
      * @throws ValidationException
      */
@@ -74,6 +78,7 @@ final class SitePhpSettings
             'upload_max_filesize' => filled($fields['upload_max_filesize'] ?? null) ? strtoupper($fields['upload_max_filesize']) : null,
             'max_execution_time' => filled($fields['max_execution_time'] ?? null) ? (int) $fields['max_execution_time'] : null,
             'max_input_vars' => filled($fields['max_input_vars'] ?? null) ? (int) $fields['max_input_vars'] : null,
+            'max_children' => filled($fields['max_children'] ?? null) ? (int) $fields['max_children'] : null,
             'directives' => self::parseDirectives($fields['directives'] ?? '') ?: null,
         ], fn (mixed $value): bool => $value !== null);
 
@@ -111,6 +116,10 @@ final class SitePhpSettings
 
             if (! preg_match(self::DIRECTIVE_NAME_PATTERN, $name)) {
                 $fail(__(':name is not a PHP setting name.', ['name' => $name]));
+            }
+
+            if ($name === 'pm' || str_starts_with($name, 'pm.')) {
+                $fail(__(':name is a PHP-FPM pool setting, not a PHP one. Set the pool\'s worker limit with Max workers above.', ['name' => $name]));
             }
 
             if (in_array($name, self::MANAGED, true)) {
@@ -158,6 +167,14 @@ final class SitePhpSettings
             'max_execution_time' => isset($this->settings['max_execution_time']) ? (string) $this->settings['max_execution_time'] : null,
             'max_input_vars' => isset($this->settings['max_input_vars']) ? (string) $this->settings['max_input_vars'] : null,
         ], fn (?string $value): bool => $value !== null) + ($this->settings['directives'] ?? []);
+    }
+
+    /**
+     * The most workers the site's pool may run at once, when the site overrides the server's limit.
+     */
+    public function maxChildren(): ?int
+    {
+        return $this->settings['max_children'] ?? null;
     }
 
     /**

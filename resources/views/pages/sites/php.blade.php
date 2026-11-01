@@ -5,6 +5,7 @@ use App\Enums\ResourceStatus;
 use App\Exceptions\ScriptFailedException;
 use App\Models\Server;
 use App\Models\Site;
+use App\Sites\SitePhpPool;
 use App\Sites\SitePhpSettings;
 use Flux\Flux;
 use Livewire\Attributes\Computed;
@@ -22,6 +23,8 @@ new class extends Component {
     public string $max_execution_time = '';
 
     public string $max_input_vars = '';
+
+    public string $max_children = '';
 
     /**
      * Other PHP settings, one "name = value" per line.
@@ -50,6 +53,7 @@ new class extends Component {
         $this->upload_max_filesize = $settings->get('upload_max_filesize');
         $this->max_execution_time = $settings->get('max_execution_time');
         $this->max_input_vars = $settings->get('max_input_vars');
+        $this->max_children = $settings->get('max_children');
         $this->directives = $settings->directivesText();
     }
 
@@ -60,6 +64,33 @@ new class extends Component {
     public function supportsSettings(): bool
     {
         return ! $this->site->octane;
+    }
+
+    /**
+     * The site's PHP-FPM pool, sized from the server's tuning.
+     */
+    #[Computed]
+    public function pool(): SitePhpPool
+    {
+        return SitePhpPool::for($this->site);
+    }
+
+    /**
+     * The memory the pool could use with the worker limit being entered, in MB, when that is more than the server
+     * set aside for PHP.
+     */
+    #[Computed]
+    public function workerMemoryWarning(): ?int
+    {
+        $workers = filter_var($this->max_children, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => SitePhpSettings::MAX_WORKERS]]);
+
+        if ($workers === false) {
+            return null;
+        }
+
+        $memory = $this->pool->memoryMb($workers);
+
+        return $memory > $this->pool->memoryBudgetMb() ? $memory : null;
     }
 
     /**
@@ -116,7 +147,7 @@ new class extends Component {
                     <form wire:submit="save" class="flex flex-col gap-6">
                         {{-- Each field spans four rows of the grid (label, description, input, error) and shares them through
                              subgrid, so inputs line up across a row however many lines each description wraps to. --}}
-                        <div class="grid gap-x-4 gap-y-6 sm:grid-cols-2 xl:grid-cols-4">
+                        <div class="grid gap-x-4 gap-y-6 sm:grid-cols-2 xl:grid-cols-3">
                             <flux:field variant="bare" class="row-span-4 grid grid-rows-subgrid gap-y-2">
                                 <flux:label>{{ __('Memory limit') }}</flux:label>
                                 <flux:description>{{ __('Such as 512M or 1G, or -1 for no limit.') }}</flux:description>
@@ -141,7 +172,21 @@ new class extends Component {
                                 <flux:input wire:model="max_input_vars" type="number" min="1" placeholder="1000" />
                                 <flux:error name="max_input_vars" />
                             </flux:field>
+                            <flux:field variant="bare" class="row-span-4 grid grid-rows-subgrid gap-y-2">
+                                <flux:label>{{ __('Max workers') }}</flux:label>
+                                <flux:description>{{ __('The most requests the site\'s pool handles at once (pm.max_children). Others wait their turn.') }}</flux:description>
+                                <flux:input wire:model.live.debounce.500ms="max_children" type="number" min="1" max="{{ App\Sites\SitePhpSettings::MAX_WORKERS }}" :placeholder="$this->pool->defaultMaxChildren()" />
+                                <flux:error name="max_children" />
+                            </flux:field>
                         </div>
+
+                        @if ($this->workerMemoryWarning)
+                            <flux:callout icon="exclamation-triangle" color="amber">
+                                <flux:callout.text>
+                                    {{ __('With every worker busy, this pool could use about :memory MB, more than the :budget MB this server sets aside for PHP. The server could run out of memory under load.', ['memory' => number_format($this->workerMemoryWarning), 'budget' => number_format($this->pool->memoryBudgetMb())]) }}
+                                </flux:callout.text>
+                            </flux:callout>
+                        @endif
 
                         <flux:textarea wire:model="directives" rows="4" spellcheck="false" :label="__('Other settings')" :description="__('One name = value per line, such as display_errors = Off.')" placeholder="max_input_time = 120&#10;session.gc_maxlifetime = 7200" class="font-mono text-xs" />
 

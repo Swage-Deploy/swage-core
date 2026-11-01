@@ -12,7 +12,8 @@ use App\Ssh\Script;
  * The PHP-FPM pool a site runs in.
  *
  * Every site gets its own on-demand pool, so idle sites hold no workers and the memory goes to the busy
- * ones. Each pool may grow as large as the server's secondary pools, which the server's tuning sized from its memory.
+ * ones. Each pool may grow as large as the server's secondary pools, which the server's tuning sized from its memory,
+ * unless the site's PHP settings give it a limit of its own.
  */
 class SitePhpPool
 {
@@ -37,9 +38,41 @@ class SitePhpPool
     {
         return rtrim(Script::render('config.site-php-fpm-pool', [
             'site' => $this->site,
-            'pool' => $this->tuning->php['secondary_pool'],
+            'pool' => ['max_children' => $this->maxChildren()] + $this->tuning->php['secondary_pool'],
             'phpValues' => SitePhpSettings::for($this->site)->phpValues(),
         ]))."\n";
+    }
+
+    /**
+     * The most workers the pool may run at once.
+     */
+    public function maxChildren(): int
+    {
+        return SitePhpSettings::for($this->site)->maxChildren() ?? $this->defaultMaxChildren();
+    }
+
+    /**
+     * The worker limit the server's tuning gives every site's pool.
+     */
+    public function defaultMaxChildren(): int
+    {
+        return $this->tuning->php['secondary_pool']['max_children'];
+    }
+
+    /**
+     * The memory the pool could use with every worker running, in MB.
+     */
+    public function memoryMb(?int $maxChildren = null): int
+    {
+        return ($maxChildren ?? $this->maxChildren()) * $this->tuning->php['process_size_mb'];
+    }
+
+    /**
+     * The memory the server's tuning set aside for PHP, in MB.
+     */
+    public function memoryBudgetMb(): int
+    {
+        return $this->tuning->php['memory_budget_mb'];
     }
 
     /**

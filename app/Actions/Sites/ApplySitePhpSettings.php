@@ -17,7 +17,7 @@ class ApplySitePhpSettings
      * Write the site's PHP-FPM pool and nginx config with the settings, and save them once both accept them. The
      * previous config is put back if either is rejected.
      *
-     * @param  array{memory_limit?: string, upload_max_filesize?: string, max_execution_time?: int, max_input_vars?: int, directives?: array<string, string>}|null  $settings
+     * @param  array{memory_limit?: string, upload_max_filesize?: string, max_execution_time?: int, max_input_vars?: int, max_children?: int, directives?: array<string, string>}|null  $settings
      *
      * @throws ScriptFailedException
      */
