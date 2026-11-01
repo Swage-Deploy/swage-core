@@ -10,5 +10,6 @@ releases@swagedeploy.app namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF
 # The CI release key, used by the Release workflow once a maintainer approves the run. Remove this line to stop trusting it.
 releases-ci@swagedeploy.app namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPQd8F09CVs0anNKlBSHlLba7qLobIR99kECgwFxZw6S
 
-# The CI release key used until 2026-10-31, kept so the tags it signed are still trusted.
-releases-ci@swagedeploy.app namespaces="git" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDHt2YYR96A0CzuMyB2jYeFo4TLEmIs2gpcki5I8WUc4
+# The CI release key used until 2026-10-31, kept so the tags it signed are still trusted. It is not trusted for tags
+# dated after that day: git checks valid-before against the date a tag was signed.
+releases-ci@swagedeploy.app namespaces="git",valid-before="20261101" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDHt2YYR96A0CzuMyB2jYeFo4TLEmIs2gpcki5I8WUc4
