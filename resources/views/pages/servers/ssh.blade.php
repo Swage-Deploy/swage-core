@@ -187,7 +187,7 @@ new class extends Component {
                                     <flux:select.option :value="$sshUser">{{ $sshUser }}</flux:select.option>
                                 @endforeach
                             </flux:select>
-                            <flux:input wire:model="name" :label="__('Name')" :description="__('Leave empty to use the key\'s comment.')" placeholder="laptop" />
+                            <flux:input wire:model="name" :label="__('Name')" :description:trailing="__('Leave empty to use the key\'s comment.')" placeholder="laptop" />
                         </div>
 
                         <flux:textarea wire:model="public_key" :label="__('Public key')" rows="3" spellcheck="false" placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... you@laptop" class="font-mono text-xs" required />
