@@ -4,6 +4,7 @@ use App\Actions\Servers\AddSshKey;
 use App\Actions\Servers\ReadSshAccess;
 use App\Actions\Servers\RemoveSshKey;
 use App\Actions\Servers\SetSshAccess;
+use App\Actions\Servers\SetSwageOnlySsh;
 use App\Exceptions\ScriptFailedException;
 use App\Models\Server;
 use App\Servers\SshAccess;
@@ -117,7 +118,7 @@ new class extends Component {
     {
         $this->authorize('update', $this->server);
 
-        if (! $this->sshAccess || $this->sshAccess->deniedElsewhere($user)) {
+        if (! $this->sshAccess || $this->sshAccess->swageOnly || $this->sshAccess->deniedElsewhere($user)) {
             return;
         }
 
@@ -126,6 +127,24 @@ new class extends Component {
         $this->change(fn () => $setSshAccess->handle($this->server, $user, $enabled), $enabled
             ? __(':user can sign in over SSH again.', ['user' => $user])
             : __(':user can no longer sign in over SSH.', ['user' => $user]), $readSshAccess);
+    }
+
+    /**
+     * Turn SSH off for everyone but Swage, or back on. Root's keys stop working too, so only the server's owner may.
+     */
+    public function toggleSwageOnly(SetSwageOnlySsh $setSwageOnlySsh, ReadSshAccess $readSshAccess): void
+    {
+        $this->authorize('runAsRoot', $this->server);
+
+        if (! $this->sshAccess) {
+            return;
+        }
+
+        $swageOnly = ! $this->sshAccess->swageOnly;
+
+        $this->change(fn () => $setSwageOnlySsh->handle($this->server, $swageOnly), $swageOnly
+            ? __('SSH is off. Only Swage can sign in.')
+            : __('SSH is back on for the keys below.'), $readSshAccess);
     }
 
     /**
@@ -196,6 +215,22 @@ new class extends Component {
                     </div>
                 </x-panel>
             @else
+                <x-panel icon="lock-closed" :heading="__('SSH access')" :description="__('Turn SSH off to keep everyone out but Swage, which keeps managing the server. The keys below are kept, and work again once SSH is back on.')">
+                    <x-slot:actions>
+                        <flux:switch :checked="! $this->sshAccess->swageOnly" wire:click="toggleSwageOnly" :label="__('SSH on')" align="left"
+                            wire:confirm.danger="{{ $this->sshAccess->swageOnly ? __('Turn SSH back on? Every key below will be able to sign in again.') : __('Turn SSH off? Only Swage will be able to sign in, and site users\' open SSH sessions will end.') }}"
+                            :disabled="auth()->user()->cannot('runAsRoot', $server)" />
+                    </x-slot:actions>
+
+                    @if ($this->sshAccess->swageOnly)
+                        <flux:callout icon="no-symbol" color="amber">
+                            <flux:callout.text>{{ __('SSH is off. Only Swage can sign in, as root with its own key, so none of the keys below work until SSH is turned back on.') }}</flux:callout.text>
+                        </flux:callout>
+                    @else
+                        <flux:text>{{ __('SSH is on. The keys below can sign in as their users.') }}</flux:text>
+                    @endif
+                </x-panel>
+
                 <x-panel icon="shield-check" heading="root" :description="__('Swage signs in as root to manage the server, so root can always sign in over SSH with a key.')" flush>
                     @include('partials.ssh-keys', ['sshUser' => 'root', 'canManage' => auth()->user()->can('runAsRoot', $server)])
                 </x-panel>
@@ -205,14 +240,14 @@ new class extends Component {
                     <x-panel wire:key="ssh-{{ $sshUser }}" icon="user" :heading="$sshUser" :description="$site->domain" flush>
                         <x-slot:actions>
                             <flux:switch :checked="$this->sshAccess->allows($sshUser)" wire:click="toggle('{{ $sshUser }}')" :label="__('SSH access')" align="left"
-                                :disabled="auth()->user()->cannot('update', $server) || $this->sshAccess->deniedElsewhere($sshUser)" />
+                                :disabled="auth()->user()->cannot('update', $server) || $this->sshAccess->swageOnly || $this->sshAccess->deniedElsewhere($sshUser)" />
                         </x-slot:actions>
 
                         @if ($this->sshAccess->deniedElsewhere($sshUser))
                             <flux:callout icon="no-symbol" color="zinc" class="m-5">
                                 <flux:callout.text>{{ __('The server\'s own sshd config stops this user signing in over SSH, so Swage can\'t turn it back on.') }}</flux:callout.text>
                             </flux:callout>
-                        @elseif (! $this->sshAccess->allows($sshUser))
+                        @elseif (! $this->sshAccess->swageOnly && ! $this->sshAccess->allows($sshUser))
                             <flux:callout icon="no-symbol" color="zinc" class="m-5">
                                 <flux:callout.text>{{ __('This user cannot sign in over SSH, even with the keys below. The site keeps running and deploying as usual.') }}</flux:callout.text>
                             </flux:callout>

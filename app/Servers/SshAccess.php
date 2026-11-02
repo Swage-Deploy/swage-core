@@ -13,14 +13,26 @@ final readonly class SshAccess
     public const string CONFIG = '/etc/ssh/sshd_config.d/01-swage-users.conf';
 
     /**
+     * The sshd drop-in that, while it exists, lets only Swage sign in.
+     */
+    public const string SWAGE_ONLY_CONFIG = '/etc/ssh/sshd_config.d/01-swage-only.conf';
+
+    /**
+     * The only keys sshd accepts while only Swage may sign in: Swage's own.
+     */
+    public const string SWAGE_ONLY_KEYS = '/etc/ssh/swage/authorized_keys';
+
+    /**
      * @param  array<string, list<AuthorizedKey>>  $keys  Each user's authorized keys.
      * @param  list<string>  $denied  The users sshd refuses, from any of its config.
      * @param  list<string>  $deniedBySwage  The users refused through Swage's drop-in.
+     * @param  bool  $swageOnly  Whether sshd accepts only Swage's key, as root, so nobody else can sign in.
      */
     public function __construct(
         public array $keys,
         public array $denied,
         public array $deniedBySwage,
+        public bool $swageOnly = false,
     ) {}
 
     /**
@@ -31,6 +43,7 @@ final readonly class SshAccess
         $keys = [];
         $denied = [];
         $deniedBySwage = [];
+        $swageOnly = false;
         $section = null;
 
         foreach (preg_split('/\r?\n/', $output) as $line) {
@@ -48,17 +61,18 @@ final readonly class SshAccess
                 'keys' => ($key = AuthorizedKey::parse($line)) ? $keys[$section[1]][] = $key : null,
                 'denied' => trim($line) !== '' ? $denied[] = trim($line) : null,
                 'swage-denied' => trim($line) !== '' ? $deniedBySwage[] = trim($line) : null,
+                'keys-file' => $swageOnly = $swageOnly || trim($line) === self::SWAGE_ONLY_KEYS,
                 default => null,
             };
         }
 
-        return new self($keys, array_values(array_unique($denied)), array_values(array_unique($deniedBySwage)));
+        return new self($keys, array_values(array_unique($denied)), array_values(array_unique($deniedBySwage)), $swageOnly);
     }
 
     /**
      * Restore what toArray() gave, such as from a Livewire component's state.
      *
-     * @param  array{keys: array<string, list<array{type: string, data: string, comment: string, options: string}>>, denied: list<string>, deniedBySwage: list<string>}  $access
+     * @param  array{keys: array<string, list<array{type: string, data: string, comment: string, options: string}>>, denied: list<string>, deniedBySwage: list<string>, swageOnly: bool}  $access
      */
     public static function fromArray(array $access): self
     {
@@ -66,11 +80,12 @@ final readonly class SshAccess
             array_map(fn (array $keys) => array_map(fn (array $key) => new AuthorizedKey(...$key), $keys), $access['keys']),
             $access['denied'],
             $access['deniedBySwage'],
+            $access['swageOnly'],
         );
     }
 
     /**
-     * @return array{keys: array<string, list<array{type: string, data: string, comment: string, options: string}>>, denied: list<string>, deniedBySwage: list<string>}
+     * @return array{keys: array<string, list<array{type: string, data: string, comment: string, options: string}>>, denied: list<string>, deniedBySwage: list<string>, swageOnly: bool}
      */
     public function toArray(): array
     {
@@ -78,6 +93,7 @@ final readonly class SshAccess
             'keys' => array_map(fn (array $keys) => array_map(fn (AuthorizedKey $key) => (array) $key, $keys), $this->keys),
             'denied' => $this->denied,
             'deniedBySwage' => $this->deniedBySwage,
+            'swageOnly' => $this->swageOnly,
         ];
     }
 
@@ -90,7 +106,7 @@ final readonly class SshAccess
     }
 
     /**
-     * Determine whether sshd lets the user sign in.
+     * Determine whether sshd lets the user sign in, once SSH is on for more than Swage.
      */
     public function allows(string $user): bool
     {

@@ -138,4 +138,6 @@ test('ssh key and access scripts are valid bash', function (string $sshUser) {
     assertValidBash(Script::render('ssh.remove-key', ['sshUser' => $sshUser, 'key' => $key]));
     assertValidBash(Script::render('ssh.set-access', ['sshUser' => 'shop', 'enabled' => true]));
     assertValidBash(Script::render('ssh.set-access', ['sshUser' => 'shop', 'enabled' => false]));
+    assertValidBash(Script::render('ssh.swage-only', ['swageOnly' => true, 'panelKey' => $key, 'siteUsers' => ['shop', 'blog']]));
+    assertValidBash(Script::render('ssh.swage-only', ['swageOnly' => false, 'panelKey' => $key, 'siteUsers' => []]));
 })->with(['root', 'shop']);

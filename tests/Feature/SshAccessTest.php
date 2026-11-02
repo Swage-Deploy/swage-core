@@ -6,6 +6,7 @@ use App\Models\Server;
 use App\Models\Site;
 use App\Models\User;
 use App\Servers\AuthorizedKey;
+use App\Servers\SshAccess;
 use App\Ssh\Script;
 use App\Ssh\ScriptResult;
 use Illuminate\Support\Str;
@@ -29,9 +30,10 @@ afterEach(function () {
  * @param  list<string>  $denied
  * @param  list<string>  $deniedBySwage
  */
-function sshServerHolds(array $keys, array $denied = [], ?array $deniedBySwage = null): string
+function sshServerHolds(array $keys, array $denied = [], ?array $deniedBySwage = null, bool $swageOnly = false): string
 {
-    $output = "@@marker denied\n".implode("\n", $denied)."\n@@marker swage-denied\n".implode("\n", $deniedBySwage ?? $denied)."\n";
+    $output = "@@marker denied\n".implode("\n", $denied)."\n@@marker swage-denied\n".implode("\n", $deniedBySwage ?? $denied)."\n"
+        .'@@marker keys-file'."\n".($swageOnly ? SshAccess::SWAGE_ONLY_KEYS : ".ssh/authorized_keys\n.ssh/authorized_keys2")."\n";
 
     foreach ($keys as $user => $file) {
         $output .= "@@marker keys {$user}\n{$file}\n";
@@ -236,4 +238,57 @@ test('authorized_keys lines are parsed with their options and comments', functio
         ->comment->toBe('jo@laptop work')
         ->and($key->fingerprint())->toBe('SHA256:faX7jwkevMEaUrvWYxryw3yGf0V05qMksVLKqZFs71c')
         ->and(AuthorizedKey::parse('# '.SSH_KEY))->toBeNull();
+});
+
+test('ssh can be turned off for everyone but swage, keeping only its key and root', function () {
+    $server = sshServer();
+    $shell = fakeShell()->respondTo('@@marker keys', new ScriptResult(0, sshServerHolds(['root' => PANEL_KEY." swage\n".SSH_KEY.' jo', 'shop' => SSH_KEY.' jo'])));
+
+    Livewire::actingAs($server->user)->test('pages::servers.ssh', ['server' => $server])
+        ->call('load')
+        ->assertSee('SSH is on.')
+        ->call('toggleSwageOnly');
+
+    $shell->assertRan("printf '%s\\n' '".PANEL_KEY." swage' > \"\$SWAGE_ONLY_KEYS\"");
+    $shell->assertRan("AllowUsers root\nAuthorizedKeysFile /etc/ssh/swage/authorized_keys");
+    $shell->assertRan('!= "$SWAGE_ONLY_KEYS"');
+    $shell->assertRan("pkill -KILL -u 'shop' sshd");
+
+    $script = collect($shell->ran)->pluck('script')->first(fn ($script) => str_contains($script, 'SWAGE_ONLY_CONFIG='));
+    expect($script)->not->toContain(SSH_KEY);
+});
+
+test('while ssh is off the page says so, and site users can\'t be switched on their own', function () {
+    $server = sshServer();
+    $shell = fakeShell()->respondTo('@@marker keys', new ScriptResult(0, sshServerHolds(['root' => PANEL_KEY, 'shop' => SSH_KEY.' jo'], swageOnly: true)));
+
+    Livewire::actingAs($server->user)->test('pages::servers.ssh', ['server' => $server])
+        ->call('load')
+        ->assertSee('SSH is off. Only Swage can sign in')
+        ->call('toggle', 'shop')
+        ->call('toggleSwageOnly');
+
+    expect(collect($shell->ran)->contains(fn ($run) => str_contains($run['script'], 'SSH_DENIED')))->toBeFalse();
+    $shell->assertRan('rm -f "$SWAGE_ONLY_CONFIG"');
+    $shell->assertRan('rm -f "$SWAGE_ONLY_KEYS"');
+});
+
+test('only the server\'s owner can turn ssh off for everyone', function () {
+    $server = sshServer();
+    $shell = fakeShell()->respondTo('@@marker keys', new ScriptResult(0, sshServerHolds(['root' => '', 'shop' => ''])));
+    $manager = User::factory()->create();
+    $server->members()->attach($manager->id, ['role' => MemberRole::Manager->value]);
+
+    Livewire::actingAs($manager)->test('pages::servers.ssh', ['server' => $server])
+        ->call('load')
+        ->call('toggleSwageOnly')
+        ->assertDispatched('toast-show');
+
+    expect(collect($shell->ran)->contains(fn ($run) => str_contains($run['script'], 'SWAGE_ONLY_CONFIG=')))->toBeFalse();
+});
+
+test('when swage stops managing a server, ssh is turned back on before its key is removed', function () {
+    $script = Script::render('revoke-access', ['publicKey' => 'AAAAC3NzaC1lZDI1NTE5AAAAIJyNbYGPIb0SBt0zoUlg2hcA8pulBF7MeTdeTsf8wb1E']);
+
+    expect(strpos($script, 'rm -f /etc/ssh/sshd_config.d/01-swage-only.conf'))->toBeLessThan(strpos($script, 'grep -vF'));
 });
