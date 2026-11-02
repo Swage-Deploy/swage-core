@@ -147,7 +147,9 @@ test('an unattended install never waits for an answer and keeps a chosen passwor
 
     expect($installer)
         ->toContain("--disable-unofficial-plugins)\n            UNOFFICIAL_PLUGINS=false")
-        ->toContain('set_env SWAGE_UNOFFICIAL_PLUGINS "$UNOFFICIAL_PLUGINS"');
+        ->toContain('set_env SWAGE_UNOFFICIAL_PLUGINS "$UNOFFICIAL_PLUGINS"')
+        ->toContain("--automatic-updates)\n            AUTOMATIC_UPDATES=true")
+        ->toContain('set_env SWAGE_AUTOMATIC_UPDATES "$AUTOMATIC_UPDATES"');
 
     expect(strpos($installer, 'db:seed'))->toBeLessThan(strpos($installer, 'as_app php artisan optimize'));
 });

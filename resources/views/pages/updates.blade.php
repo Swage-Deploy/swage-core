@@ -68,6 +68,7 @@ new #[Title('Updates')] class extends Component {
     public function startUpdate(SelfUpdater $updater): void
     {
         $this->authorize('administer');
+        abort_if(config('swage.self_update.automatic'), 403);
 
         if (! $updater->isSupported()) {
             Flux::toast(variant: 'danger', text: __('Self-update only works on installs created by the Swage installer.'));
@@ -127,7 +128,11 @@ new #[Title('Updates')] class extends Component {
 
     <div>
         <flux:heading size="xl" level="1" class="tracking-tight">{{ __('Updates') }}</flux:heading>
-        <flux:subheading>{{ __('Update Swage to its newest version tag. A new release is built beside the running one and only goes live once it passes a health check.') }}</flux:subheading>
+        <flux:subheading>
+            {{ config('swage.self_update.automatic')
+                ? __('Swage updates itself to its newest version tag every day, then updates its plugins. A new release is built beside the running one and only goes live once it passes a health check.')
+                : __('Update Swage to its newest version tag. A new release is built beside the running one and only goes live once it passes a health check.') }}
+        </flux:subheading>
     </div>
 
     @unless ($updater->isSupported())
@@ -174,7 +179,9 @@ new #[Title('Updates')] class extends Component {
 
         <div class="flex gap-2">
             <flux:button icon="arrow-path" wire:click="check">{{ __('Check for updates') }}</flux:button>
-            <flux:button variant="primary" icon="arrow-down-tray" wire:click="startUpdate" wire:confirm="{{ __('Update Swage now?') }}" :disabled="! $updater->isSupported() || $this->updates->contains(fn ($update) => $update->status->isInProgress())">{{ __('Update now') }}</flux:button>
+            @unless (config('swage.self_update.automatic'))
+                <flux:button variant="primary" icon="arrow-down-tray" wire:click="startUpdate" wire:confirm="{{ __('Update Swage now?') }}" :disabled="! $updater->isSupported() || $this->updates->contains(fn ($update) => $update->status->isInProgress())">{{ __('Update now') }}</flux:button>
+            @endunless
         </div>
     </section>
 
@@ -197,7 +204,7 @@ new #[Title('Updates')] class extends Component {
                             <span class="font-mono text-xs">{{ $update->from_version ?? __('unknown') }} → {{ $update->to_version ?? __('unknown') }}</span>
                         @endif
                     </flux:table.cell>
-                    <flux:table.cell>{{ $update->user?->name ?? __('CLI') }}</flux:table.cell>
+                    <flux:table.cell>{{ $update->startedBy() }}</flux:table.cell>
                     <flux:table.cell>{{ $update->created_at->diffForHumans() }}</flux:table.cell>
                     <flux:table.cell><x-status :color="$update->status->color()" :label="$update->status->label()" /></flux:table.cell>
                     <flux:table.cell align="end">
@@ -214,7 +221,11 @@ new #[Title('Updates')] class extends Component {
     </x-panel>
 
     <flux:callout icon="puzzle-piece" color="zinc">
-        <flux:callout.text>{{ __('Plugins are installed and updated from the Plugins page. Each change rebuilds Swage the same way an update does, and shows up in the history above.') }}</flux:callout.text>
+        <flux:callout.text>
+            {{ config('swage.self_update.automatic')
+                ? __('Plugins are installed from the Plugins page and update automatically after Swage. Each change rebuilds Swage the same way an update does, and shows up in the history above.')
+                : __('Plugins are installed and updated from the Plugins page. Each change rebuilds Swage the same way an update does, and shows up in the history above.') }}
+        </flux:callout.text>
         <x-slot name="actions">
             <flux:button size="sm" :href="route('plugins')" wire:navigate>{{ __('Manage plugins') }}</flux:button>
         </x-slot>

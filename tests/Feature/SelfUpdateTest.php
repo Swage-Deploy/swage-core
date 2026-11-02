@@ -4,7 +4,11 @@ use App\Enums\DeploymentStatus;
 use App\Jobs\StartSelfUpdate;
 use App\Models\SelfUpdate;
 use App\Models\User;
+use App\Plugins\Plugin;
+use App\Plugins\PluginKind;
+use App\Plugins\PluginManifest;
 use App\SelfUpdate\SelfUpdater;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
@@ -533,4 +537,106 @@ test('once swage has a release key, it no longer follows the branch of a reposit
 
     expect(SelfUpdate::sole()->output)->toContain('Swage only updates to version tags signed with a Swage release key')
         ->and(currentRelease($this->root))->toBe(realpath($this->release));
+});
+
+/**
+ * Record an installed plugin, so the automatic update has plugins to update after Swage.
+ */
+function withInstalledPlugin(string $root): void
+{
+    config(['swage.plugins.manifest' => $root.'/shared/storage/app/plugins.json', 'swage.plugins.directory' => $root.'/shared/storage/app/plugins']);
+    File::ensureDirectoryExists($root.'/shared/storage/app/plugins/acme-swage-gitea-bbbbbbbbbbbb');
+
+    app(PluginManifest::class)->save(new Plugin('acme/swage-gitea', PluginKind::SourceControl, 'https://github.com/acme/swage-gitea.git', 'v1.0.0', LATEST_COMMIT, 'acme-swage-gitea-bbbbbbbbbbbb', now()->toIso8601String()));
+}
+
+function ranPluginUpdate(PendingProcess $process): bool
+{
+    return $process->command === ['php', 'artisan', 'swage:plugin:update', '--force', '--automatic'];
+}
+
+test('the automatic update updates swage first, then its plugins from the new release', function () {
+    $liveWhenPluginsUpdated = null;
+    fakeRepository(["'php' 'artisan' 'swage:plugin:update' *" => function () use (&$liveWhenPluginsUpdated) {
+        $liveWhenPluginsUpdated = currentRelease($this->root);
+
+        return Process::result('Every plugin is up to date.');
+    }]);
+    withInstalledPlugin($this->root);
+
+    $this->artisan('swage:auto-update')->assertSuccessful();
+
+    expect(SelfUpdate::sole())
+        ->automatic->toBeTrue()
+        ->status->toBe(DeploymentStatus::Finished)
+        ->to_commit->toBe(LATEST_COMMIT)
+        ->and(SelfUpdate::sole()->startedBy())->toBe('Automatic')
+        ->and(currentRelease($this->root))->not->toBe(realpath($this->release))
+        ->and($liveWhenPluginsUpdated)->toBe(currentRelease($this->root));
+
+    Process::assertRan(fn (PendingProcess $process) => ranPluginUpdate($process) && $process->path === $this->root.'/current');
+});
+
+test('the automatic update still updates plugins when swage is up to date, without recording a swage update', function () {
+    fakeRepository(["'git' 'ls-remote' *" => CURRENT_COMMIT."\trefs/heads/main"]);
+    withInstalledPlugin($this->root);
+
+    $this->artisan('swage:auto-update')->assertSuccessful();
+
+    expect(SelfUpdate::count())->toBe(0);
+    Process::assertRan(fn (PendingProcess $process) => ranPluginUpdate($process));
+});
+
+test('plugins wait for the next automatic update when swage fails to update', function () {
+    fakeRepository(["'npm' 'run' 'build'" => Process::result(errorOutput: 'vite exploded', exitCode: 1)]);
+    withInstalledPlugin($this->root);
+
+    $this->artisan('swage:auto-update')->assertFailed();
+
+    expect(SelfUpdate::sole()->status)->toBe(DeploymentStatus::Failed);
+    Process::assertDidntRun(fn (PendingProcess $process) => ranPluginUpdate($process));
+});
+
+test('the automatic update leaves a running update alone', function () {
+    fakeRepository();
+    SelfUpdate::factory()->create(['status' => DeploymentStatus::Running]);
+
+    $this->artisan('swage:auto-update')->assertSuccessful();
+
+    expect(SelfUpdate::count())->toBe(1);
+    Process::assertDidntRun(fn (PendingProcess $process) => ($process->command[3] ?? null) === 'clone');
+});
+
+test('the automatic update skips plugins when none are installed', function () {
+    fakeRepository();
+    config(['swage.plugins.manifest' => $this->root.'/shared/storage/app/plugins.json']);
+
+    $this->artisan('swage:auto-update')->assertSuccessful();
+
+    Process::assertDidntRun(fn (PendingProcess $process) => ranPluginUpdate($process));
+});
+
+test('swage updates itself every day only on panels set to update automatically', function (bool $automatic) {
+    config(['swage.self_update.automatic' => $automatic]);
+
+    $event = collect(app(Schedule::class)->events())
+        ->first(fn ($event) => str_contains($event->command ?? '', 'swage:auto-update'));
+
+    expect($event->expression)->toBe('0 3 * * *')
+        ->and($event->filtersPass($this->app))->toBe($automatic);
+})->with([true, false]);
+
+test('panels that update automatically have no update button', function () {
+    config(['swage.self_update.automatic' => true]);
+    Queue::fake();
+    fakeRepository();
+
+    Livewire::actingAs(User::factory()->admin()->create())->test('pages::updates')
+        ->assertSee('Swage updates itself to its newest version tag every day')
+        ->assertDontSee('Update now')
+        ->assertSee('Check for updates')
+        ->call('startUpdate');
+
+    expect(SelfUpdate::count())->toBe(0);
+    Queue::assertNothingPushed();
 });

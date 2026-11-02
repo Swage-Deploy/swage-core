@@ -29,6 +29,9 @@
 # not ones installed straight from a git repository, such as on panels hosted
 # for someone else.
 #
+# Pass --automatic-updates to update Swage and then its plugins every day,
+# instead of from the Updates and Plugins pages, such as on hosted panels.
+#
 # Without a terminal, the installer stops with an error wherever it would
 # otherwise wait for an answer, such as when the domain does not resolve to
 # this server yet.
@@ -60,6 +63,7 @@ PHP_VERSION=8.5
 NODE_VERSION=22
 CLOUDFLARE_TUNNEL_TOKEN=
 UNOFFICIAL_PLUGINS=true
+AUTOMATIC_UPDATES=false
 DOMAIN=
 EMAIL=
 # Taken out of the environment straight away, so composer, npm and the host migrations never see it.
@@ -93,6 +97,9 @@ while [ "$#" -gt 0 ]; do
             ;;
         --disable-unofficial-plugins)
             UNOFFICIAL_PLUGINS=false
+            ;;
+        --automatic-updates)
+            AUTOMATIC_UPDATES=true
             ;;
         --domain=* | --email=*)
             if [[ "$1" == --domain=* ]]; then
@@ -398,6 +405,7 @@ set_env SWAGE_CERTIFICATE_EMAIL "$EMAIL"
 set_env SWAGE_ADMIN_EMAIL "$EMAIL"
 set_env SWAGE_REQUIRE_TWO_FACTOR true
 set_env SWAGE_UNOFFICIAL_PLUGINS "$UNOFFICIAL_PLUGINS"
+set_env SWAGE_AUTOMATIC_UPDATES "$AUTOMATIC_UPDATES"
 
 # Behind a tunnel, Cloudflare Access may guard the public URL, so self-updates
 # check the new release through nginx's loopback listener instead.

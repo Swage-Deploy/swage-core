@@ -153,6 +153,9 @@ return [
         'php_binary' => env('SWAGE_PHP_BINARY', 'php'),
         'php_fpm_service' => env('SWAGE_PHP_FPM_SERVICE', 'php8.5-fpm'),
         'releases_to_keep' => (int) env('SWAGE_UPDATE_RELEASES_TO_KEEP', 5),
+        // Update Swage and then its plugins every day, instead of from the Updates and Plugins pages. Hosted panels,
+        // which are installed with --automatic-updates, update this way.
+        'automatic' => (bool) env('SWAGE_AUTOMATIC_UPDATES', false),
         'health_check_url' => env('SWAGE_HEALTH_CHECK_URL'),
         'host_migrator' => env('SWAGE_HOST_MIGRATOR', '/usr/local/sbin/swage-host-migrate'),
         // Ubuntu creates this file when an update, such as a new kernel, needs a reboot. Unattended upgrades never reboot.

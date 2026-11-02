@@ -283,6 +283,7 @@ new #[Title('Plugins')] class extends Component {
     public function updatePlugin(string $name): void
     {
         $this->authorize('administer');
+        abort_if(config('swage.self_update.automatic'), 403);
 
         app(PluginManifest::class)->find($name) ?? abort(404);
 
@@ -297,6 +298,7 @@ new #[Title('Plugins')] class extends Component {
     public function updateAll(): void
     {
         $this->authorize('administer');
+        abort_if(config('swage.self_update.automatic'), 403);
 
         $names = $this->updatableInCategory();
 
@@ -438,7 +440,7 @@ new #[Title('Plugins')] class extends Component {
                     @forelse ($this->operations as $operation)
                         <flux:table.row :key="'operation-'.$operation->id">
                             <flux:table.cell>{{ $operation->title() }}</flux:table.cell>
-                            <flux:table.cell>{{ $operation->user?->name ?? __('CLI') }}</flux:table.cell>
+                            <flux:table.cell>{{ $operation->startedBy() }}</flux:table.cell>
                             <flux:table.cell>{{ $operation->created_at->diffForHumans() }}</flux:table.cell>
                             <flux:table.cell><x-status :color="$operation->status->color()" :label="$operation->status->label()" /></flux:table.cell>
                             <flux:table.cell align="end">
@@ -518,11 +520,11 @@ new #[Title('Plugins')] class extends Component {
             </x-panel>
         @endif
 
-        <x-panel icon="puzzle-piece" :heading="__('Installed')" flush>
+        <x-panel icon="puzzle-piece" :heading="__('Installed')" :description="config('swage.self_update.automatic') ? __('Plugins update automatically every day, right after Swage.') : null" flush>
             @if ($this->plugins !== [])
                 <x-slot:actions>
                     <div wire:init="checkForUpdates" class="flex items-center gap-2">
-                        @if (count($this->updatableInCategory()) > 1)
+                        @if (! config('swage.self_update.automatic') && count($this->updatableInCategory()) > 1)
                             <flux:button size="sm" variant="primary" icon="arrow-up-circle" wire:click="updateAll"
                                 wire:confirm="{{ __('Update every :category plugin with a newer version and rebuild Swage once with all of them?', ['category' => strtolower($this->currentCategory->label())]) }}">{{ __('Update all') }}</flux:button>
                         @endif
@@ -571,7 +573,7 @@ new #[Title('Plugins')] class extends Component {
                             </flux:table.cell>
                             <flux:table.cell align="end">
                                 <div class="flex justify-end gap-1">
-                                    @if (is_array($update))
+                                    @if (is_array($update) && ! config('swage.self_update.automatic'))
                                         <flux:button size="sm" variant="primary" icon="arrow-up-circle" wire:click="updatePlugin('{{ $plugin->name }}')"
                                             wire:confirm="{{ __('Update :plugin to :ref and rebuild Swage?', ['plugin' => $plugin->name, 'ref' => $update['ref']]) }}">{{ __('Update') }}</flux:button>
                                     @endif

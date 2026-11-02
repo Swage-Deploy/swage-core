@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['user_id', 'status', 'from_commit', 'from_version', 'to_commit', 'to_version', 'plugin_operation', 'output', 'started_at', 'finished_at'])]
+#[Fillable(['user_id', 'automatic', 'status', 'from_commit', 'from_version', 'to_commit', 'to_version', 'plugin_operation', 'output', 'started_at', 'finished_at'])]
 class SelfUpdate extends Model
 {
     /** @use HasFactory<SelfUpdateFactory> */
@@ -23,6 +23,7 @@ class SelfUpdate extends Model
     protected function casts(): array
     {
         return [
+            'automatic' => 'boolean',
             'status' => DeploymentStatus::class,
             'plugin_operation' => 'array',
             'started_at' => 'datetime',
@@ -36,6 +37,14 @@ class SelfUpdate extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    /**
+     * Who started the update: the person, Swage's daily automatic update, or someone on the command line.
+     */
+    public function startedBy(): string
+    {
+        return $this->user?->name ?? ($this->automatic ? __('Automatic') : __('CLI'));
     }
 
     /**

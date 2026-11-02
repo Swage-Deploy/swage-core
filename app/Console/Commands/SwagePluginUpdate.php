@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Console\Commands\Concerns\ReportsToSelfUpdate;
 use App\Enums\DeploymentStatus;
+use App\Models\SelfUpdate;
 use App\Plugins\Plugin;
 use App\Plugins\PluginIndex;
 use App\Plugins\PluginInstaller;
@@ -24,7 +25,8 @@ class SwagePluginUpdate extends Command
     protected $signature = 'swage:plugin:update
         {names?* : The plugins to update, every installed plugin when omitted}
         {--force : Update without asking for confirmation}
-        {--update= : Run an update requested from the dashboard}';
+        {--update= : Run an update requested from the dashboard}
+        {--automatic : Record the update as the daily automatic update}';
 
     /**
      * The console command description.
@@ -112,6 +114,19 @@ class SwagePluginUpdate extends Command
             $installer->pruneCheckouts();
 
             return self::FAILURE;
+        }
+
+        // The automatic update only records plugin updates that happen, so a day with none adds nothing to the history.
+        if ($this->option('automatic') && ! $this->selfUpdate) {
+            $this->selfUpdate = SelfUpdate::create([
+                'automatic' => true,
+                'status' => DeploymentStatus::Running,
+                'from_commit' => $updater->currentCommit(),
+                'from_version' => $updater->runningVersion(),
+                'plugin_operation' => ['action' => 'update', 'names' => array_map(fn (array $update): string => $update[1]->name, $updates)],
+                'started_at' => now(),
+                'output' => collect($updates)->map(fn (array $update): string => "{$update[1]->name}: {$update[0]->ref} → {$update[1]->ref}\n")->implode(''),
+            ]);
         }
 
         foreach ($updates as [, $plugin]) {

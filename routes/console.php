@@ -13,4 +13,5 @@ Schedule::command('model:prune')->daily();
 Schedule::command('sanctum:prune-expired --hours=24')->daily();
 Schedule::command('swage:refresh-certificates')->daily();
 Schedule::command('swage:check-reboots')->hourly();
+Schedule::command('swage:auto-update')->dailyAt('03:00')->when(fn (): bool => config('swage.self_update.automatic'))->runInBackground()->withoutOverlapping(120);
 Schedule::call(fn () => DatabaseRestoreUpload::prune())->name('prune-database-restore-uploads')->daily();

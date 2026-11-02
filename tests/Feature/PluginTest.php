@@ -1015,3 +1015,51 @@ test('plugins recorded before unofficial plugins existed are official', function
 
     expect(app(PluginManifest::class)->find('acme/swage-gitea')->official)->toBeTrue();
 });
+
+test('the automatic update records the plugins it updates as an automatic update', function () {
+    installedPlugin('v1.1.0', '9999999999999999999999999999999999999999');
+    fakePluginRepository($this->composer);
+
+    $this->artisan('swage:plugin:update', ['--force' => true, '--automatic' => true])->assertSuccessful();
+
+    expect(SelfUpdate::sole())
+        ->automatic->toBeTrue()
+        ->status->toBe(DeploymentStatus::Finished)
+        ->plugin_operation->toBe(['action' => 'update', 'names' => ['acme/swage-gitea']])
+        ->output->toContain('acme/swage-gitea: v1.1.0 → v1.2.0')
+        ->and(SelfUpdate::sole()->startedBy())->toBe('Automatic')
+        ->and(app(PluginManifest::class)->find('acme/swage-gitea')->ref)->toBe('v1.2.0');
+});
+
+test('the automatic update adds nothing to the history when every plugin is up to date', function () {
+    installedPlugin('v1.2.0');
+    fakePluginRepository($this->composer);
+
+    $this->artisan('swage:plugin:update', ['--force' => true, '--automatic' => true])->assertSuccessful();
+
+    expect(SelfUpdate::count())->toBe(0);
+});
+
+test('panels that update automatically offer no plugin update buttons', function () {
+    config(['swage.self_update.automatic' => true]);
+    installedPlugin('v1.1.0', '9999999999999999999999999999999999999999');
+    fakePluginIndex([
+        ['name' => 'acme/swage-gitea', 'kind' => 'source-control', 'repository' => 'https://github.com/acme/swage-gitea.git'],
+        ['name' => 'acme/swage-bitbucket', 'kind' => 'source-control', 'repository' => 'https://github.com/acme/swage-bitbucket.git'],
+    ]);
+    app(PluginManifest::class)->save(new Plugin('acme/swage-bitbucket', PluginKind::SourceControl, 'https://github.com/acme/swage-bitbucket.git', 'main', '6666666666666666666666666666666666666666', 'acme-swage-bitbucket-666666666666', now()->toIso8601String()));
+    Process::fake(["'git' 'ls-remote' *" => PLUGIN_REFS]);
+    Queue::fake();
+
+    Livewire::actingAs(pluginAdmin())->test('pages::plugins.index')
+        ->call('checkForUpdates')
+        ->assertSee('v1.2.0 available')
+        ->assertSee('Plugins update automatically every day')
+        ->assertDontSee('Update all')
+        ->assertDontSeeHtml('wire:click="updatePlugin(')
+        ->call('updatePlugin', 'acme/swage-gitea')
+        ->call('updateAll');
+
+    expect(SelfUpdate::count())->toBe(0);
+    Queue::assertNothingPushed();
+});
