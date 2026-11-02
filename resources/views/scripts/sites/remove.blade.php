@@ -16,6 +16,9 @@ systemctl reload {!! $php->fpmService() !!}
 systemctl disable --now {!! 'swage-redis@'.$site->system_user !!} > /dev/null 2>&1 || true
 rm -f /etc/swage-redis/{!! $site->system_user !!}.conf /etc/redis/sites/{!! $site->system_user !!}.conf
 
+# A later site with the same user should be able to sign in over SSH.
+@include('scripts.ssh.partials.deny-users', ['sshUser' => $site->system_user, 'enabled' => true])
+
 if id {!! $site->system_user !!} > /dev/null 2>&1; then
     pkill -KILL -u {!! $site->system_user !!} || true
     userdel --remove {!! $site->system_user !!} 2> /dev/null || rm -rf '{!! $site->homePath() !!}'

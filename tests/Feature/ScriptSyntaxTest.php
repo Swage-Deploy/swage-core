@@ -10,6 +10,7 @@ use App\Models\DatabaseUser;
 use App\Models\Server;
 use App\Models\Site;
 use App\Provisioning\ServerTuner;
+use App\Servers\AuthorizedKey;
 use App\Sites\SiteEnvironment;
 use App\Ssh\Script;
 use Illuminate\Support\Facades\File;
@@ -128,3 +129,13 @@ test('environment values are read and written by the site user', function () {
 
     File::deleteDirectory($directory);
 });
+
+test('ssh key and access scripts are valid bash', function (string $sshUser) {
+    $key = AuthorizedKey::parse('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH19p8RfJ0qVLhfLDRMCKadYQMsQ3/jBzurYkYZTJ3jA jo@laptop');
+
+    assertValidBash(Script::render('ssh.read-access', ['marker' => '@@marker', 'sshUsers' => ['root', 'shop']]));
+    assertValidBash(Script::render('ssh.add-key', ['sshUser' => $sshUser, 'key' => $key]));
+    assertValidBash(Script::render('ssh.remove-key', ['sshUser' => $sshUser, 'key' => $key]));
+    assertValidBash(Script::render('ssh.set-access', ['sshUser' => 'shop', 'enabled' => true]));
+    assertValidBash(Script::render('ssh.set-access', ['sshUser' => 'shop', 'enabled' => false]));
+})->with(['root', 'shop']);

@@ -38,7 +38,7 @@ test('users cannot open servers they do not own', function (string $route) {
     $this->actingAs(User::factory()->create())
         ->get(route($route, $server))
         ->assertForbidden();
-})->with(['servers.show', 'servers.sites', 'servers.databases', 'servers.daemons', 'servers.scheduler', 'servers.activity']);
+})->with(['servers.show', 'servers.sites', 'servers.databases', 'servers.daemons', 'servers.scheduler', 'servers.ssh', 'servers.activity']);
 
 test('a server can be connected', function () {
     $user = User::factory()->create();

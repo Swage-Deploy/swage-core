@@ -36,6 +36,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('daemons', 'pages::servers.daemons')->name('daemons');
         Route::livewire('scheduler', 'pages::servers.scheduler')->name('scheduler');
         Route::livewire('config', 'pages::servers.config')->name('config');
+        Route::livewire('ssh', 'pages::servers.ssh')->name('ssh');
         Route::livewire('activity', 'pages::servers.activity')->name('activity');
         Route::livewire('logs', 'pages::servers.logs')->name('logs');
         Route::livewire('plugins', 'pages::servers.plugins')->name('plugins');

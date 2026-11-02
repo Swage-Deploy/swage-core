@@ -52,6 +52,7 @@
             <flux:navbar.item icon="cog-6-tooth" :href="route('servers.daemons', $server)" :current="request()->pageRouteIs('servers.daemons')" wire:navigate>{{ __('Daemons') }}</flux:navbar.item>
             <flux:navbar.item icon="clock" :href="route('servers.scheduler', $server)" :current="request()->pageRouteIs('servers.scheduler')" wire:navigate>{{ __('Scheduler') }}</flux:navbar.item>
             <flux:navbar.item icon="adjustments-horizontal" :href="route('servers.config', $server)" :current="request()->pageRouteIs('servers.config')" wire:navigate>{{ __('Config') }}</flux:navbar.item>
+            <flux:navbar.item icon="key" :href="route('servers.ssh', $server)" :current="request()->pageRouteIs('servers.ssh')" wire:navigate>{{ __('SSH') }}</flux:navbar.item>
             <flux:navbar.item icon="user-group" :href="route('servers.members', $server)" :current="request()->pageRouteIs('servers.members')" wire:navigate>{{ __('Members') }}</flux:navbar.item>
             @php($attention = App\Servers\ServerAttention::combine(app(App\Servers\ServerAttention::class)->forServer($server)))
             <flux:navbar.item icon="puzzle-piece" :href="route('servers.plugins', $server)" :current="request()->pageRouteIs('servers.plugins')" wire:navigate

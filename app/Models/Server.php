@@ -170,6 +170,20 @@ class Server extends Model
     }
 
     /**
+     * Get the users whose SSH keys and logins this server's SSH page manages: root, then each site's user. Swage's own user
+     * is left out, since only the panel signs in as it.
+     *
+     * @return list<string>
+     */
+    public function sshUsers(): array
+    {
+        return [
+            'root',
+            ...$this->sites()->orderBy('system_user')->pluck('system_user'),
+        ];
+    }
+
+    /**
      * @return HasMany<Database, $this>
      */
     public function databases(): HasMany
