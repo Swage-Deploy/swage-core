@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\NotificationType;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -31,8 +32,9 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string|null $remember_token
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
+ * @property array<string, bool>|null $notification_preferences
  */
-#[Fillable(['name', 'email', 'password', 'is_admin'])]
+#[Fillable(['name', 'email', 'password', 'is_admin', 'notification_preferences'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
@@ -58,6 +60,7 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_admin' => 'boolean',
+            'notification_preferences' => 'array',
         ];
     }
 
@@ -136,6 +139,15 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     /**
      * Get the user's initials
      */
+    /**
+     * Whether the user gets notifications of the type by email as well as in the panel. Every type is emailed until
+     * they turn it off.
+     */
+    public function wantsEmail(NotificationType $type): bool
+    {
+        return $this->notification_preferences[$type->value] ?? true;
+    }
+
     public function initials(): string
     {
         $initials = Str::initials($this->name, true);

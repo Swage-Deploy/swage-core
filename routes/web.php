@@ -18,6 +18,7 @@ Route::post('impersonation/stop', StopImpersonatingController::class)->middlewar
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::livewire('dashboard', 'pages::servers.index')->name('dashboard');
     Route::livewire('servers/create', 'pages::servers.create')->name('servers.create');
+    Route::livewire('notifications', 'pages::notifications')->name('notifications');
     Route::livewire('updates', 'pages::updates')->middleware('can:administer')->name('updates');
 
     // These change what Swage runs and the credentials it holds, so they ask for the password again.
@@ -37,6 +38,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('scheduler', 'pages::servers.scheduler')->name('scheduler');
         Route::livewire('config', 'pages::servers.config')->name('config');
         Route::livewire('ssh', 'pages::servers.ssh')->name('ssh');
+        Route::livewire('notifications', 'pages::servers.notifications')->name('notifications');
         Route::livewire('activity', 'pages::servers.activity')->name('activity');
         Route::livewire('logs', 'pages::servers.logs')->name('logs');
         Route::livewire('plugins', 'pages::servers.plugins')->name('plugins');

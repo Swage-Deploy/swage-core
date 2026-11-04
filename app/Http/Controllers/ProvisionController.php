@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Actions\Servers\ApplyServerSpecs;
 use App\Enums\ServerStatus;
 use App\Models\Server;
+use App\Notifications\Notifier;
+use App\Notifications\ProvisioningFailed;
 use App\Provisioning\ServerSpecs;
 use App\Ssh\Script;
 use Illuminate\Http\Request;
@@ -88,7 +90,7 @@ class ProvisionController extends Controller
     /**
      * Mark the server as failed so the user can retry with a new provisioning command.
      */
-    public function failed(Request $request, string $token): Response
+    public function failed(Request $request, string $token, Notifier $notifier): Response
     {
         $server = $this->provisioning($token);
 
@@ -97,6 +99,8 @@ class ProvisionController extends Controller
             'provisioning_step' => "{$server->provisioning_step} (failed at line {$request->integer('line')})",
             'provision_token' => Str::random(64),
         ]);
+
+        $notifier->send(new ProvisioningFailed($server));
 
         return response()->noContent();
     }

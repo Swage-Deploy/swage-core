@@ -15,6 +15,10 @@
                     <flux:sidebar.item icon="server-stack" :href="route('dashboard')" :current="request()->routeIs('dashboard', 'servers.index', 'servers.create')" wire:navigate>
                         {{ __('Servers') }}
                     </flux:sidebar.item>
+                    @php($unreadNotifications = auth()->user()->unreadNotifications()->count())
+                    <flux:sidebar.item icon="bell" :href="route('notifications')" :current="request()->routeIs('notifications')" :badge="$unreadNotifications ?: null" :badge:color="$unreadNotifications ? 'red' : null" wire:navigate>
+                        {{ __('Notifications') }}
+                    </flux:sidebar.item>
                     @unlessimpersonating
                         <flux:sidebar.item icon="link" :href="route('source-control.edit')" :current="request()->routeIs('source-control.edit')" wire:navigate>
                             {{ __('Source control') }}

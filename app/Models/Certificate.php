@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-#[Fillable(['domains', 'status', 'expires_at'])]
+#[Fillable(['domains', 'status', 'expires_at', 'overdue_notified_at'])]
 class Certificate extends Model
 {
     /** @use HasFactory<CertificateFactory> */
@@ -33,6 +33,7 @@ class Certificate extends Model
             'domains' => 'array',
             'status' => ResourceStatus::class,
             'expires_at' => 'datetime',
+            'overdue_notified_at' => 'datetime',
         ];
     }
 

@@ -6,6 +6,8 @@ use App\Enums\DeploymentStatus;
 use App\Jobs\StartSelfUpdate;
 use App\Models\SelfUpdate;
 use App\Models\User;
+use App\Notifications\Notifier;
+use App\Notifications\UpdateFailed;
 use App\Plugins\PluginInstaller;
 use Closure;
 use Illuminate\Support\Facades\Cache;
@@ -471,6 +473,10 @@ class SelfUpdater
         $this->write($update, $message, $onOutput);
 
         $update->update(['status' => $status, 'finished_at' => now()]);
+
+        if ($status === DeploymentStatus::Failed) {
+            app(Notifier::class)->send(new UpdateFailed($update));
+        }
 
         return $update;
     }

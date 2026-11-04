@@ -4,6 +4,8 @@ namespace App\Jobs;
 
 use App\Models\Certificate;
 use App\Models\Server;
+use App\Notifications\CertificateRenewalOverdue;
+use App\Notifications\Notifier;
 use App\Ssh\RemoteShell;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
@@ -32,7 +34,7 @@ class RefreshCertificateExpiry implements ShouldQueue
     /**
      * Execute the job. A server that cannot be reached keeps the dates it had, to be read again tomorrow.
      */
-    public function handle(RemoteShell $shell): void
+    public function handle(RemoteShell $shell, Notifier $notifier): void
     {
         $certificates = $this->certificates->loadMissing('site')->keyBy(fn (Certificate $certificate): string => $certificate->site->directoryName());
 
@@ -52,6 +54,16 @@ class RefreshCertificateExpiry implements ShouldQueue
 
         foreach ($matches as [, $name, $expiresAt]) {
             $certificates->get($name)?->update(['expires_at' => Carbon::parse(trim($expiresAt))]);
+        }
+
+        // People are told once when a certificate misses its renewal, and again if a later renewal is missed.
+        foreach ($certificates as $certificate) {
+            if (! $certificate->renewalIsOverdue()) {
+                $certificate->update(['overdue_notified_at' => null]);
+            } elseif (! $certificate->overdue_notified_at) {
+                $certificate->update(['overdue_notified_at' => now()]);
+                $notifier->send(new CertificateRenewalOverdue($certificate));
+            }
         }
     }
 }

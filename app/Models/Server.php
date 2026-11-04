@@ -216,6 +216,14 @@ class Server extends Model
     }
 
     /**
+     * @return HasMany<ServerWebhook, $this>
+     */
+    public function webhooks(): HasMany
+    {
+        return $this->hasMany(ServerWebhook::class);
+    }
+
+    /**
      * @return HasMany<Task, $this>
      */
     public function tasks(): HasMany

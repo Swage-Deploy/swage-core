@@ -4,7 +4,10 @@ namespace App\Ssh;
 
 use App\Exceptions\HostKeyMismatchException;
 use App\Models\Server;
+use App\Notifications\HostKeyChanged;
+use App\Notifications\Notifier;
 use Closure;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use phpseclib4\Crypt\PublicKeyLoader;
 use phpseclib4\Net\SFTP;
@@ -122,6 +125,11 @@ class PhpseclibRemoteShell implements RemoteShell
         }
 
         if (! hash_equals($server->host_key, $hostKey)) {
+            // Every connection attempt fails the same way until it is dealt with, so people are told once a day.
+            if (Cache::add("host-key-changed-notified:{$server->id}", true, now()->addDay())) {
+                app(Notifier::class)->send(new HostKeyChanged($server));
+            }
+
             throw new HostKeyMismatchException($server);
         }
     }

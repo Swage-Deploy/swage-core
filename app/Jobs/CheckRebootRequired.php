@@ -3,6 +3,8 @@
 namespace App\Jobs;
 
 use App\Models\Server;
+use App\Notifications\Notifier;
+use App\Notifications\RebootRequired;
 use App\Ssh\RemoteShell;
 use App\Ssh\Script;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -28,7 +30,7 @@ class CheckRebootRequired implements ShouldQueue
     /**
      * Execute the job. A server that cannot be reached keeps what was last read, to be checked again next hour.
      */
-    public function handle(RemoteShell $shell): void
+    public function handle(RemoteShell $shell, Notifier $notifier): void
     {
         try {
             $result = $shell->run($this->server, Script::render('reboot-required'), timeout: 30);
@@ -48,9 +50,15 @@ class CheckRebootRequired implements ShouldQueue
             return;
         }
 
+        $newlyRequired = $this->server->reboot_required_at === null;
+
         $this->server->update([
             'reboot_required_at' => $this->server->reboot_required_at ?? now(),
             'reboot_required_packages' => array_slice($lines, 1),
         ]);
+
+        if ($newlyRequired) {
+            $notifier->send(new RebootRequired($this->server));
+        }
     }
 }

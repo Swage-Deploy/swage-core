@@ -7,6 +7,8 @@ use App\Deployments\DeployScript;
 use App\Enums\DeploymentStatus;
 use App\Enums\ResourceStatus;
 use App\Models\Deployment;
+use App\Notifications\DeploymentFailed;
+use App\Notifications\Notifier;
 use App\Sites\SiteIntegrations;
 use App\Ssh\RemoteShell;
 use DateTimeInterface;
@@ -110,6 +112,10 @@ class DeploySite implements ShouldQueue
             'output' => $output,
             'finished_at' => now(),
         ]);
+
+        if ($status === DeploymentStatus::Failed && $this->deployment->site->status !== ResourceStatus::Removing) {
+            app(Notifier::class)->send(new DeploymentFailed($this->deployment));
+        }
     }
 
     /**
@@ -122,5 +128,7 @@ class DeploySite implements ShouldQueue
             'output' => trim(($this->deployment->output ?? '')."\n".$exception?->getMessage()),
             'finished_at' => now(),
         ]);
+
+        app(Notifier::class)->send(new DeploymentFailed($this->deployment));
     }
 }

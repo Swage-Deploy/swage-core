@@ -4,6 +4,7 @@ use App\Enums\DeploymentStatus;
 use App\Jobs\StartSelfUpdate;
 use App\Models\SelfUpdate;
 use App\Models\User;
+use App\Notifications\UpdateFailed;
 use App\Plugins\Plugin;
 use App\Plugins\PluginKind;
 use App\Plugins\PluginManifest;
@@ -12,6 +13,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
@@ -178,6 +180,18 @@ test('a failed build leaves the running release untouched', function () {
         ->and(File::directories($this->root.'/releases'))->toHaveCount(1);
 
     Process::assertDidntRun(fn (PendingProcess $process) => ($process->command[2] ?? null) === 'migrate');
+});
+
+test('administrators are told when an update fails', function () {
+    Notification::fake();
+    $admin = User::factory()->create(['is_admin' => true]);
+    $user = User::factory()->create();
+    fakeRepository(["'npm' 'run' 'build'" => Process::result(errorOutput: 'vite exploded', exitCode: 1)]);
+
+    $this->artisan('swage:update')->assertFailed();
+
+    Notification::assertSentTo($admin, UpdateFailed::class);
+    Notification::assertNotSentTo($user, UpdateFailed::class);
 });
 
 test('a release that fails its health check is rolled back', function () {
