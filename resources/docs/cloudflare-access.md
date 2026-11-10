@@ -16,6 +16,17 @@ If these paths are behind Access, provisioning hangs at its first step, and push
 
 If scripts or CI use the [API](/docs/api) from outside Access, also bypass `api/*`, which is protected by API keys. Or keep it behind Access and send an Access service token with each request.
 
+The same goes for `mcp`, the [read-only MCP server](/docs/ai-assistants) that AI assistants connect to. Assistants can't log in to Access, so either bypass the `mcp` path, which only accepts read-only API keys, or create an Access service token and add its two headers to the assistant's connection:
+
+```bash
+claude mcp add --transport http swage https://swage.example.com/mcp \
+  --header 'Authorization: Bearer <your key>' \
+  --header 'CF-Access-Client-Id: <client id>' \
+  --header 'CF-Access-Client-Secret: <client secret>'
+```
+
+For a service token, add a policy to the panel's application with **Action:** Service Auth that includes the token.
+
 ## Setting up the applications
 
 In **Zero Trust → Access → Applications**:
