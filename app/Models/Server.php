@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
@@ -213,6 +214,22 @@ class Server extends Model
     public function scheduledJobs(): HasMany
     {
         return $this->hasMany(ScheduledJob::class);
+    }
+
+    /**
+     * @return HasMany<ServerMetric, $this>
+     */
+    public function metrics(): HasMany
+    {
+        return $this->hasMany(ServerMetric::class);
+    }
+
+    /**
+     * @return HasOne<ServerMetric, $this>
+     */
+    public function latestMetric(): HasOne
+    {
+        return $this->hasOne(ServerMetric::class)->latestOfMany();
     }
 
     /**

@@ -9,11 +9,14 @@ use App\Jobs\InstallDatabaseEngine;
 use App\Jobs\InstallPgvector;
 use App\Jobs\OptimizeServer;
 use App\Jobs\RebootServer;
+use App\Jobs\RecordServerMetrics;
 use App\Models\Certificate;
 use App\Models\Server;
+use App\Models\ServerMetric;
 use App\Provisioning\ServerTuning;
 use Flux\Flux;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -53,6 +56,43 @@ new class extends Component {
             ->with('site')
             ->orderBy('expires_at')
             ->get();
+    }
+
+    /**
+     * The server's readings from the last day, oldest first, for the system monitor's trends.
+     *
+     * @return Collection<int, ServerMetric>
+     */
+    #[Computed]
+    public function metrics(): Collection
+    {
+        return $this->server->metrics()->where('created_at', '>=', now()->subDay())->orderBy('created_at')->get();
+    }
+
+    #[Computed]
+    public function latestMetric(): ?ServerMetric
+    {
+        return $this->metrics->last() ?? $this->server->latestMetric;
+    }
+
+    /**
+     * Take a reading now rather than waiting for the next one, at most every 15 seconds per server.
+     */
+    public function refreshMetrics(): void
+    {
+        abort_unless($this->server->isActive(), 409);
+
+        if (! RateLimiter::attempt("server-metrics:{$this->server->id}", 1, fn () => null, 15)) {
+            return;
+        }
+
+        $metric = app()->call([new RecordServerMetrics($this->server), 'handle']);
+
+        unset($this->metrics, $this->latestMetric);
+
+        if (! $metric) {
+            Flux::toast(variant: 'danger', text: __('Couldn\'t read the server\'s usage. Check that it\'s running and Swage can connect over SSH.'));
+        }
     }
 
     /**
@@ -303,6 +343,63 @@ new class extends Component {
                             {{ __('Requested by :packages.', ['packages' => implode(', ', $server->reboot_required_packages)]) }}
                         @endif
                     </flux:text>
+                </x-panel>
+            @endif
+
+            @if ($server->isActive())
+                <x-panel icon="chart-bar" :heading="__('System monitor')" :description="__('Swage reads the server\'s usage every five minutes. Trends cover the last 24 hours.')" wire:poll.60s>
+                    <x-slot:actions>
+                        <flux:button size="sm" icon="arrow-path" wire:click="refreshMetrics">{{ __('Refresh') }}</flux:button>
+                    </x-slot:actions>
+
+                    @if ($metric = $this->latestMetric)
+                        @php($history = fn (Closure $value, Closure $label): array => $this->metrics->map(fn (ServerMetric $reading): array => ['at' => $reading->created_at, 'value' => $value($reading), 'label' => $label($reading)])->all())
+                        @php($cores = max(1, $server->cpu_cores ?? 1))
+
+                        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                            <x-metric-tile
+                                :label="__('CPU')"
+                                :value="Number::format($metric->cpu_percent, precision: 1).'%'"
+                                :detail="trans_choice(':count core|:count cores', $cores)"
+                                :percent="$metric->cpu_percent"
+                                :history="$history(fn ($reading) => $reading->cpu_percent, fn ($reading) => Number::format($reading->cpu_percent, precision: 1).'%')"
+                            />
+                            <x-metric-tile
+                                :label="__('Load')"
+                                :value="Number::format($metric->load_1, precision: 2)"
+                                :detail="__('5 min :five · 15 min :fifteen', ['five' => Number::format($metric->load_5, precision: 2), 'fifteen' => Number::format($metric->load_15, precision: 2)])"
+                                :percent="$metric->load_1 / $cores * 100"
+                                :history="$history(fn ($reading) => $reading->load_1, fn ($reading) => Number::format($reading->load_1, precision: 2))"
+                                :max="max($cores, $this->metrics->max('load_1') ?? 0)"
+                            />
+                            <x-metric-tile
+                                :label="__('Memory')"
+                                :value="Number::format($metric->memoryPercent(), precision: 0).'%'"
+                                :detail="__(':used of :total', ['used' => Number::fileSize($metric->memory_used, precision: 1), 'total' => Number::fileSize($metric->memory_total, precision: 1)]).($metric->swap_total ? ' · '.__('swap :used', ['used' => Number::fileSize($metric->swap_used, precision: 1)]) : '')"
+                                :percent="$metric->memoryPercent()"
+                                :history="$history(fn ($reading) => $reading->memoryPercent(), fn ($reading) => Number::fileSize($reading->memory_used, precision: 1))"
+                            />
+                            <x-metric-tile
+                                :label="__('Disk')"
+                                :value="Number::format($metric->diskPercent(), precision: 0).'%'"
+                                :detail="__(':free free of :total', ['free' => Number::fileSize($metric->disk_total - $metric->disk_used, precision: 1), 'total' => Number::fileSize($metric->disk_total, precision: 1)])"
+                                :percent="$metric->diskPercent()"
+                                :high="__('Filling up')"
+                                :history="$history(fn ($reading) => $reading->diskPercent(), fn ($reading) => Number::fileSize($reading->disk_used, precision: 1))"
+                            />
+                        </div>
+
+                        <flux:text class="mt-4 text-xs">
+                            {{ __('Up :uptime. Read :time.', ['uptime' => Carbon\CarbonInterval::seconds($metric->uptime_seconds)->cascade()->forHumans(['parts' => 2]), 'time' => $metric->created_at->diffForHumans()]) }}
+                            @if ($metric->created_at->lt(now()->subMinutes(15)))
+                                <span class="text-amber-600 dark:text-amber-400">{{ __('Swage hasn\'t been able to read the server since.') }}</span>
+                            @endif
+                        </flux:text>
+                    @else
+                        <x-empty-state icon="chart-bar" :heading="__('No readings yet')" class="py-8">
+                            {{ __('The first reading arrives within five minutes, or refresh to take one now.') }}
+                        </x-empty-state>
+                    @endif
                 </x-panel>
             @endif
 
