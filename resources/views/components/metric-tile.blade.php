@@ -6,10 +6,12 @@
     'high' => __('High'),
     'history' => [],
     'max' => 100,
+    'meter' => true,
 ])
 
 @php
     $level = match (true) {
+        ! $meter => 'normal',
         $percent >= 90 => 'critical',
         $percent >= 75 => 'warning',
         default => 'normal',
@@ -38,6 +40,7 @@
         @endif
     </div>
 
+    @if ($meter)
     <div class="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100 dark:bg-white/5" role="meter" aria-label="{{ $label }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ round($percent) }}">
         <div @class([
             'h-full rounded-full',
@@ -46,6 +49,7 @@
             'bg-red-500' => $level === 'critical',
         ]) style="width: {{ round(max(0, min(100, $percent)), 1) }}%"></div>
     </div>
+    @endif
 
     @if (count($history))
         <x-sparkline :points="$history" :max="$max" class="mt-1" />

@@ -20,6 +20,7 @@ use Illuminate\Support\Collection;
  * @property float $load_1
  * @property float $load_5
  * @property float $load_15
+ * @property bool $load_is_host
  * @property int $memory_total
  * @property int $memory_used
  * @property int $swap_total
@@ -30,7 +31,7 @@ use Illuminate\Support\Collection;
  * @property Carbon $created_at
  */
 #[Fillable([
-    'cpu_percent', 'load_1', 'load_5', 'load_15', 'memory_total', 'memory_used', 'swap_total', 'swap_used',
+    'cpu_percent', 'load_1', 'load_5', 'load_15', 'load_is_host', 'memory_total', 'memory_used', 'swap_total', 'swap_used',
     'disk_total', 'disk_used', 'uptime_seconds',
 ])]
 class ServerMetric extends Model
@@ -56,6 +57,7 @@ class ServerMetric extends Model
             'load_1' => 'float',
             'load_5' => 'float',
             'load_15' => 'float',
+            'load_is_host' => 'boolean',
             'memory_total' => 'integer',
             'memory_used' => 'integer',
             'swap_total' => 'integer',
@@ -107,6 +109,8 @@ class ServerMetric extends Model
         return [
             'cpu_percent' => $this->cpu_percent,
             'load' => [$this->load_1, $this->load_5, $this->load_15],
+            // In a container, load is the host's, shared with everything else on it, so it says little about this server.
+            'load_is_host' => $this->load_is_host,
             'memory_percent' => round($this->memoryPercent(), 1),
             'memory_used_bytes' => $this->memory_used,
             'memory_total_bytes' => $this->memory_total,
@@ -196,6 +200,7 @@ class ServerMetric extends Model
             'load_1' => (float) $values['loadavg'][0],
             'load_5' => (float) ($values['loadavg'][1] ?? 0),
             'load_15' => (float) ($values['loadavg'][2] ?? 0),
+            'load_is_host' => ! in_array($values['container'][0] ?? 'none', ['', 'none'], true),
             'memory_total' => $kilobytes('MemTotal'),
             'memory_used' => max(0, $kilobytes('MemTotal') - $kilobytes('MemAvailable')),
             'swap_total' => $kilobytes('SwapTotal'),

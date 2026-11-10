@@ -365,10 +365,11 @@ new class extends Component {
                                 :history="$history(fn ($reading) => $reading->cpu_percent, fn ($reading) => Number::format($reading->cpu_percent, precision: 1).'%')"
                             />
                             <x-metric-tile
-                                :label="__('Load')"
+                                :label="$metric->load_is_host ? __('Host load') : __('Load')"
                                 :value="Number::format($metric->load_1, precision: 2)"
                                 :detail="__('5 min :five · 15 min :fifteen', ['five' => Number::format($metric->load_5, precision: 2), 'fifteen' => Number::format($metric->load_15, precision: 2)])"
                                 :percent="$metric->load_1 / $cores * 100"
+                                :meter="! $metric->load_is_host"
                                 :history="$history(fn ($reading) => $reading->load_1, fn ($reading) => Number::format($reading->load_1, precision: 2))"
                                 :max="max($cores, $this->metrics->max('load_1') ?? 0)"
                             />
@@ -390,6 +391,9 @@ new class extends Component {
                         </div>
 
                         <flux:text class="mt-4 text-xs">
+                            @if ($metric->load_is_host)
+                                {{ __('This server is a container, so its load is its host\'s, shared with everything else running there.') }}
+                            @endif
                             {{ __('Up :uptime. Read :time.', ['uptime' => Carbon\CarbonInterval::seconds($metric->uptime_seconds)->cascade()->forHumans(['parts' => 2]), 'time' => $metric->created_at->diffForHumans()]) }}
                             @if ($metric->created_at->lt(now()->subMinutes(15)))
                                 <span class="text-amber-600 dark:text-amber-400">{{ __('Swage hasn\'t been able to read the server since.') }}</span>

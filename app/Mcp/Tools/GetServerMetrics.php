@@ -16,7 +16,7 @@ class GetServerMetrics extends SwageTool
 {
     protected ?ApiAbility $ability = ApiAbility::ServersRead;
 
-    protected string $description = 'Get a server\'s CPU, load, memory and disk use: the latest reading and hourly averages and peaks over a period of up to a week. Swage reads them every five minutes; a missing hour means the server could not be reached.';
+    protected string $description = 'Get a server\'s CPU, load, memory and disk use: the latest reading and hourly averages and peaks over a period of up to a week. Swage reads them every five minutes; a missing hour means the server could not be reached. When load_is_host is true the server is a container, and its load is the host\'s, so judge it by CPU instead.';
 
     public function schema(JsonSchema $schema): array
     {

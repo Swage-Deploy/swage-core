@@ -82,6 +82,8 @@ The server's overview page shows its CPU, load, memory and disk use, each with a
 
 A reading turns amber at 75% and red at 90%. Load counts against the server's CPU cores, so a load of 2 on a two-core server reads as 100%. Disk is the root filesystem, and memory counts what the kernel can't reclaim, so page cache isn't included. If Swage can't reach the server, its charts show a gap and the page says when it was last read.
 
+In a container, such as an LXC container on Proxmox, the load average is the host's, shared with everything else running there. Swage shows it as **Host load**, without a meter or warnings, so judge the container by its CPU instead. Its CPU, memory, disk and uptime are its own.
+
 ## Hardware-aware tuning
 
 Every service on a server shares the same machine, so Swage budgets its memory in a fixed order:

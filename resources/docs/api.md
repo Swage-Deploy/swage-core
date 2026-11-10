@@ -86,7 +86,7 @@ Work on servers happens in the background, the same as in the panel. Requests th
 
 To connect a server, send its `name` and `ip_address`. Optionally send `type` (`app` or `database`), `private_ip_address`, `ssh_port`, `php_versions` (such as `["8.4", "8.5"]`), `default_php_version`, `database` (`mysql`, `postgres`, `postgres-pgvector` or `none`) and `has_redis`. The response's `provision_command` is the command to run as root on the server, as on its page in the panel. It starts provisioning for 24 hours. After that, fetch the server again for a new one.
 
-Each server's `usage` is its latest [system monitor](/docs/servers#system-monitor) reading: `cpu_percent`, `load` (1, 5 and 15 minutes), memory, swap and disk as percentages and bytes, `uptime_seconds`, and `read_at`, when it was taken. It is `null` until the server's first reading. When a server needs a reboot, `reboot_required_since` says since when and `reboot_required_packages` lists the packages that asked for it.
+Each server's `usage` is its latest [system monitor](/docs/servers#system-monitor) reading: `cpu_percent`, `load` (1, 5 and 15 minutes), `load_is_host` (true in a container, whose load is its host's), memory, swap and disk as percentages and bytes, `uptime_seconds`, and `read_at`, when it was taken. It is `null` until the server's first reading. When a server needs a reboot, `reboot_required_since` says since when and `reboot_required_packages` lists the packages that asked for it.
 
 Showing a single server also lists `recent_failed_tasks`, its failed scripts from the past week, and, for keys with `certificates:read`, `certificates_not_renewing`, its sites' certificates that are close to expiring without being renewed.
 

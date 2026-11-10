@@ -19,6 +19,7 @@ function metricsOutput(): string
         'MemAvailable:    1000000 kB',
         'SwapTotal:       2000000 kB',
         'SwapFree:        1500000 kB',
+        'container none',
         'loadavg 0.52 0.40 0.31',
         'uptime 1209600.55',
         'disk 80000000000 60000000000',
@@ -49,6 +50,7 @@ test('readings are parsed from the script output', function () {
         'load_1' => 0.52,
         'load_5' => 0.40,
         'load_15' => 0.31,
+        'load_is_host' => false,
         'memory_total' => 4000000 * 1024,
         'memory_used' => 3000000 * 1024,
         'swap_total' => 2000000 * 1024,
@@ -57,6 +59,23 @@ test('readings are parsed from the script output', function () {
         'disk_used' => 60000000000,
         'uptime_seconds' => 1209600,
     ]);
+});
+
+test('load inside a container is marked as the host\'s', function () {
+    expect(ServerMetric::parse(str_replace('container none', 'container lxc', metricsOutput()))['load_is_host'])->toBeTrue()
+        ->and(ServerMetric::parse(str_replace('container none', 'container', metricsOutput()))['load_is_host'])->toBeFalse()
+        ->and(ServerMetric::parse(str_replace("container none\n", '', metricsOutput()))['load_is_host'])->toBeFalse();
+});
+
+test('the overview shows a container\'s load as its host\'s, without warning about it', function () {
+    $server = Server::factory()->create(['cpu_cores' => 2]);
+    serverMetric($server, ['load_1' => 8.0, 'load_is_host' => true]);
+
+    Livewire::actingAs($server->user)->test('pages::servers.show', ['server' => $server])
+        ->assertSee('Host load')
+        ->assertSee('8.00')
+        ->assertSee('This server is a container')
+        ->assertDontSeeHtml('aria-label="Host load"');
 });
 
 test('output that is not from the metrics script is ignored', function (string $output) {
