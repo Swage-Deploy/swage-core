@@ -1,0 +1,150 @@
+{
+    "sections": [
+        {
+            "title": "Getting started",
+            "pages": [
+                {
+                    "slug": "introduction",
+                    "title": "Introduction"
+                },
+                {
+                    "slug": "installation",
+                    "title": "Installation"
+                },
+                {
+                    "slug": "cloudflare-tunnel",
+                    "title": "Cloudflare Tunnel"
+                },
+                {
+                    "slug": "cloudflare-access",
+                    "title": "Cloudflare Access"
+                },
+                {
+                    "slug": "swage-cloud",
+                    "title": "Swage Cloud"
+                },
+                {
+                    "slug": "first-steps",
+                    "title": "First steps"
+                }
+            ]
+        },
+        {
+            "title": "Team",
+            "pages": [
+                {
+                    "slug": "users",
+                    "title": "Users"
+                },
+                {
+                    "slug": "members",
+                    "title": "Server and site members"
+                },
+                {
+                    "slug": "notifications",
+                    "title": "Notifications"
+                }
+            ]
+        },
+        {
+            "title": "Servers",
+            "pages": [
+                {
+                    "slug": "servers",
+                    "title": "Connecting servers"
+                },
+                {
+                    "slug": "databases",
+                    "title": "Databases"
+                },
+                {
+                    "slug": "database-servers",
+                    "title": "Database servers"
+                },
+                {
+                    "slug": "daemons-and-scheduler",
+                    "title": "Daemons and scheduled jobs"
+                },
+                {
+                    "slug": "configuration-overrides",
+                    "title": "Config overrides"
+                },
+                {
+                    "slug": "logs-and-activity",
+                    "title": "Logs and activity"
+                }
+            ]
+        },
+        {
+            "title": "Sites",
+            "pages": [
+                {
+                    "slug": "sites",
+                    "title": "Creating sites"
+                },
+                {
+                    "slug": "deployments",
+                    "title": "Deployments"
+                },
+                {
+                    "slug": "site-settings",
+                    "title": "Site settings"
+                },
+                {
+                    "slug": "source-control",
+                    "title": "Source control"
+                }
+            ]
+        },
+        {
+            "title": "Plugins",
+            "pages": [
+                {
+                    "slug": "plugins",
+                    "title": "Using plugins"
+                },
+                {
+                    "slug": "writing-plugins",
+                    "title": "Writing plugins"
+                }
+            ]
+        },
+        {
+            "title": "Operations",
+            "pages": [
+                {
+                    "slug": "updating",
+                    "title": "Updating"
+                },
+                {
+                    "slug": "moving",
+                    "title": "Moving to a new server"
+                },
+                {
+                    "slug": "changing-domain",
+                    "title": "Changing the domain"
+                },
+                {
+                    "slug": "security",
+                    "title": "Security"
+                },
+                {
+                    "slug": "api",
+                    "title": "API"
+                },
+                {
+                    "slug": "ai-assistants",
+                    "title": "AI assistants"
+                },
+                {
+                    "slug": "configuration",
+                    "title": "Configuration reference"
+                },
+                {
+                    "slug": "troubleshooting",
+                    "title": "Troubleshooting"
+                }
+            ]
+        }
+    ]
+}

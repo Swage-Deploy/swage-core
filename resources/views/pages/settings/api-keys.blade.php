@@ -44,6 +44,12 @@ new #[Title('API keys')] class extends Component {
     #[Locked]
     public ?string $plainTextKey = null;
 
+    /**
+     * Whether the key just created can only read, so it can connect an AI assistant to the MCP server.
+     */
+    #[Locked]
+    public bool $plainTextKeyIsReadOnly = false;
+
     public function mount(): void
     {
         $this->resetAccess();
@@ -73,6 +79,20 @@ new #[Title('API keys')] class extends Component {
     public function readOnly(): void
     {
         $this->access = array_map(fn (): string => 'read', ApiAbility::areas());
+    }
+
+    /**
+     * Read what an AI assistant needs through the MCP server, which only accepts keys that can't write.
+     */
+    public function aiAssistant(): void
+    {
+        $this->name = $this->name ?: __('AI assistant');
+        $this->root = false;
+        $this->access = array_map(fn (): string => 'none', ApiAbility::areas());
+
+        foreach (['servers', 'sites', 'deployments', 'certificates'] as $area) {
+            $this->access[$area] = 'read';
+        }
     }
 
     public function fullAccess(): void
@@ -122,6 +142,7 @@ new #[Title('API keys')] class extends Component {
         unset($this->keys);
 
         $this->plainTextKey = $token->plainTextToken;
+        $this->plainTextKeyIsReadOnly = collect($token->accessToken->abilities)->every(fn (string $ability): bool => str_ends_with($ability, ':read'));
 
         Flux::modal('api-key-form')->close();
         Flux::modal('new-api-key')->show();
@@ -143,6 +164,7 @@ new #[Title('API keys')] class extends Component {
     public function forgetKey(): void
     {
         $this->plainTextKey = null;
+        $this->plainTextKeyIsReadOnly = false;
     }
 
     /**
@@ -240,6 +262,7 @@ new #[Title('API keys')] class extends Component {
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <flux:legend class="!mb-0">{{ __('Access') }}</flux:legend>
                     <div class="flex gap-1">
+                        <flux:button size="xs" variant="ghost" icon="sparkles" wire:click="aiAssistant">{{ __('AI assistant') }}</flux:button>
                         <flux:button size="xs" variant="ghost" wire:click="readOnly">{{ __('Read everything') }}</flux:button>
                         <flux:button size="xs" variant="ghost" wire:click="fullAccess">{{ __('Full access') }}</flux:button>
                     </div>
@@ -288,6 +311,14 @@ new #[Title('API keys')] class extends Component {
             </div>
 
             <flux:input readonly copyable :value="$plainTextKey" class="font-mono" />
+
+            @if ($plainTextKeyIsReadOnly)
+                <div class="flex flex-col gap-2">
+                    <flux:heading>{{ __('Connect an AI assistant') }}</flux:heading>
+                    <flux:text>{{ __('This key can only read, so it can connect Claude Code or another AI assistant to Swage\'s read-only MCP server at :url. Run this to add it to Claude Code:', ['url' => route('mcp')]) }}</flux:text>
+                    <flux:input readonly copyable :value="'claude mcp add --transport http swage '.route('mcp').' --header \'Authorization: Bearer '.$plainTextKey.'\''" class="font-mono" />
+                </div>
+            @endif
 
             <div class="flex justify-end">
                 <flux:modal.close>
