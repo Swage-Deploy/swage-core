@@ -30,6 +30,7 @@ Route::prefix('v1')->name('api.')->middleware(['auth:sanctum', 'throttle:api'])-
     Route::prefix('servers/{server}')->name('servers.')->middleware('can:view,server')->scopeBindings()->group(function () {
         Route::middleware('abilities:servers:read')->group(function () {
             Route::get('/', [ServerController::class, 'show'])->name('show');
+            Route::get('metrics', [ServerController::class, 'metrics'])->name('metrics');
             Route::get('activity', [TaskController::class, 'index'])->name('activity.index');
             Route::get('activity/{task}', [TaskController::class, 'show'])->name('activity.show');
         });

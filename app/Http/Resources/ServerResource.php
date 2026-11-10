@@ -2,7 +2,10 @@
 
 namespace App\Http\Resources;
 
+use App\Enums\ApiAbility;
 use App\Enums\PhpVersion;
+use App\Enums\TaskStatus;
+use App\Models\Certificate;
 use App\Models\Server;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
@@ -18,6 +21,8 @@ class ServerResource extends JsonResource
     public function toArray(Request $request): array
     {
         $canUpdate = $request->user()->can('update', $this->resource);
+        // A single server also lists what needs attention, which would cost a few queries per server in a list.
+        $detailed = $request->routeIs('api.servers.show');
 
         return [
             'id' => $this->id,
@@ -39,6 +44,22 @@ class ServerResource extends JsonResource
             'has_pgvector' => $this->has_pgvector,
             'has_redis' => $this->has_redis,
             'reboot_required' => $this->reboot_required_at !== null,
+            'reboot_required_since' => $this->reboot_required_at,
+            'reboot_required_packages' => $this->reboot_required_at ? ($this->reboot_required_packages ?? []) : [],
+            'usage' => $this->when($this->relationLoaded('latestMetric'), fn (): ?array => $this->latestMetric?->usage()),
+            'certificates_not_renewing' => $this->when($detailed && $request->user()->tokenCan(ApiAbility::CertificatesRead->value), fn () => Certificate::query()
+                ->renewalOverdue()
+                ->whereHas('site', fn ($query) => $query->where('server_id', $this->id))
+                ->with('site')
+                ->get()
+                ->map(fn (Certificate $certificate): array => ['site_id' => $certificate->site_id, 'domain' => $certificate->site->domain, 'expires_at' => $certificate->expires_at])
+                ->values()),
+            'recent_failed_tasks' => $this->when($detailed, fn () => $this->tasks()
+                ->where('status', TaskStatus::Failed)
+                ->where('created_at', '>=', now()->subWeek())
+                ->latest('id')
+                ->limit(5)
+                ->get(['id', 'name', 'created_at'])),
             'owner' => ['id' => $this->user_id, 'name' => $this->user?->name],
             'can' => [
                 'update' => $canUpdate,

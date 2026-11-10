@@ -73,7 +73,8 @@ Work on servers happens in the background, the same as in the panel. Requests th
 |---|---|---|---|
 | `GET` | `/servers` | `servers:read` | Lists the servers you can open. |
 | `POST` | `/servers` | `servers:write` | Connects a server. |
-| `GET` | `/servers/{server}` | `servers:read` | Shows a server. |
+| `GET` | `/servers/{server}` | `servers:read` | Shows a server, with what needs attention on it. |
+| `GET` | `/servers/{server}/metrics` | `servers:read` | Shows its latest usage and hourly averages and peaks over the past `hours`, 24 unless you send up to 168. |
 | `DELETE` | `/servers/{server}` | `servers:write` | Stops managing the server. Only its owner can. |
 | `POST` | `/servers/{server}/reboot` | `servers:write` | Reboots the server. |
 | `POST` | `/servers/{server}/optimize` | `servers:write` | Re-detects the hardware and re-tunes every service. |
@@ -84,6 +85,10 @@ Work on servers happens in the background, the same as in the panel. Requests th
 | `GET` | `/servers/{server}/activity/{task}` | `servers:read` | Shows one, with its output. |
 
 To connect a server, send its `name` and `ip_address`. Optionally send `type` (`app` or `database`), `private_ip_address`, `ssh_port`, `php_versions` (such as `["8.4", "8.5"]`), `default_php_version`, `database` (`mysql`, `postgres`, `postgres-pgvector` or `none`) and `has_redis`. The response's `provision_command` is the command to run as root on the server, as on its page in the panel. It starts provisioning for 24 hours. After that, fetch the server again for a new one.
+
+Each server's `usage` is its latest [system monitor](/docs/servers#system-monitor) reading: `cpu_percent`, `load` (1, 5 and 15 minutes), memory, swap and disk as percentages and bytes, `uptime_seconds`, and `read_at`, when it was taken. It is `null` until the server's first reading. When a server needs a reboot, `reboot_required_since` says since when and `reboot_required_packages` lists the packages that asked for it.
+
+Showing a single server also lists `recent_failed_tasks`, its failed scripts from the past week, and, for keys with `certificates:read`, `certificates_not_renewing`, its sites' certificates that are close to expiring without being renewed.
 
 While a PHP version is being installed, removed or made the default, the server's `php_task` holds the `action` (`install`, `default` or `remove`) and the `version`. Otherwise it is `null`.
 

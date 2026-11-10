@@ -11,6 +11,7 @@ use App\Http\Resources\ServerResource;
 use App\Jobs\OptimizeServer;
 use App\Jobs\RebootServer;
 use App\Models\Server;
+use App\Models\ServerMetric;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
@@ -24,7 +25,7 @@ class ServerController extends Controller
      */
     public function index(Request $request): AnonymousResourceCollection
     {
-        return ServerResource::collection($request->user()->accessibleServers()->with('user')->orderBy('name')->get());
+        return ServerResource::collection($request->user()->accessibleServers()->with(['user', 'latestMetric'])->orderBy('name')->get());
     }
 
     /**
@@ -50,7 +51,23 @@ class ServerController extends Controller
 
     public function show(Server $server): ServerResource
     {
-        return ServerResource::make($server->load('user'));
+        return ServerResource::make($server->load(['user', 'latestMetric']));
+    }
+
+    /**
+     * The latest reading of the server's CPU, load, memory, swap and disk, and hourly averages and peaks over the
+     * past `hours`, up to a week.
+     */
+    public function metrics(Request $request, Server $server): JsonResponse
+    {
+        $request->validate(['hours' => ['nullable', 'integer', 'min:1', 'max:'.(ServerMetric::RETENTION_DAYS * 24)]]);
+
+        $readings = $server->metrics()->where('created_at', '>=', now()->subHours($request->integer('hours', 24)))->get();
+
+        return response()->json(['data' => [
+            'latest' => $server->latestMetric?->usage(),
+            'hourly' => ServerMetric::hourly($readings),
+        ]]);
     }
 
     /**

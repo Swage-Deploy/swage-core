@@ -75,19 +75,6 @@ abstract class SwageTool extends Tool
      */
     protected static function usage(?ServerMetric $metric): ?array
     {
-        return $metric ? [
-            'cpu_percent' => $metric->cpu_percent,
-            'load' => [$metric->load_1, $metric->load_5, $metric->load_15],
-            'memory_percent' => round($metric->memoryPercent(), 1),
-            'memory_used_bytes' => $metric->memory_used,
-            'memory_total_bytes' => $metric->memory_total,
-            'swap_used_bytes' => $metric->swap_used,
-            'swap_total_bytes' => $metric->swap_total,
-            'disk_percent' => round($metric->diskPercent(), 1),
-            'disk_used_bytes' => $metric->disk_used,
-            'disk_total_bytes' => $metric->disk_total,
-            'uptime_seconds' => $metric->uptime_seconds,
-            'read_at' => self::time($metric->created_at),
-        ] : null;
+        return $metric?->usage();
     }
 }

@@ -40,19 +40,7 @@ class GetServerMetrics extends SwageTool
         return Response::json([
             'server' => ['id' => $server->id, 'name' => $server->name, 'cpu_cores' => $server->cpu_cores],
             'latest' => self::usage($readings->last() ?? $server->latestMetric),
-            'hourly' => $readings
-                ->groupBy(fn (ServerMetric $reading): string => $reading->created_at->copy()->startOfHour()->toIso8601String())
-                ->map(fn ($hour, string $start): array => [
-                    'hour' => $start,
-                    'cpu_percent_average' => round($hour->avg('cpu_percent'), 1),
-                    'cpu_percent_peak' => round($hour->max('cpu_percent'), 1),
-                    'load_peak' => round($hour->max('load_1'), 2),
-                    'memory_percent_average' => round($hour->avg(fn (ServerMetric $reading): float => $reading->memoryPercent()), 1),
-                    'memory_percent_peak' => round($hour->max(fn (ServerMetric $reading): float => $reading->memoryPercent()), 1),
-                    'disk_percent' => round($hour->last()->diskPercent(), 1),
-                    'readings' => $hour->count(),
-                ])
-                ->values(),
+            'hourly' => ServerMetric::hourly($readings),
         ]);
     }
 }

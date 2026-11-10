@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\MassPrunable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * One reading of a server's CPU, memory, disk and load, taken every few minutes for the server's overview.
@@ -94,6 +95,56 @@ class ServerMetric extends Model
     public function diskPercent(): float
     {
         return $this->disk_total > 0 ? $this->disk_used / $this->disk_total * 100 : 0;
+    }
+
+    /**
+     * The reading as the API and MCP server describe it.
+     *
+     * @return array<string, mixed>
+     */
+    public function usage(): array
+    {
+        return [
+            'cpu_percent' => $this->cpu_percent,
+            'load' => [$this->load_1, $this->load_5, $this->load_15],
+            'memory_percent' => round($this->memoryPercent(), 1),
+            'memory_used_bytes' => $this->memory_used,
+            'memory_total_bytes' => $this->memory_total,
+            'swap_percent' => round($this->swapPercent(), 1),
+            'swap_used_bytes' => $this->swap_used,
+            'swap_total_bytes' => $this->swap_total,
+            'disk_percent' => round($this->diskPercent(), 1),
+            'disk_used_bytes' => $this->disk_used,
+            'disk_total_bytes' => $this->disk_total,
+            'uptime_seconds' => $this->uptime_seconds,
+            'read_at' => $this->created_at->toIso8601String(),
+        ];
+    }
+
+    /**
+     * Average and peak use for each hour of the readings given, oldest first. An hour with no readings is left out.
+     *
+     * @param  Collection<int, ServerMetric>  $readings
+     * @return list<array<string, mixed>>
+     */
+    public static function hourly(Collection $readings): array
+    {
+        return $readings
+            ->sortBy('created_at')
+            ->groupBy(fn (ServerMetric $reading): string => $reading->created_at->copy()->startOfHour()->toIso8601String())
+            ->map(fn (Collection $hour, string $start): array => [
+                'hour' => $start,
+                'cpu_percent_average' => round($hour->avg('cpu_percent'), 1),
+                'cpu_percent_peak' => round($hour->max('cpu_percent'), 1),
+                'load_peak' => round($hour->max('load_1'), 2),
+                'memory_percent_average' => round($hour->avg(fn (ServerMetric $reading): float => $reading->memoryPercent()), 1),
+                'memory_percent_peak' => round($hour->max(fn (ServerMetric $reading): float => $reading->memoryPercent()), 1),
+                'swap_percent_peak' => round($hour->max(fn (ServerMetric $reading): float => $reading->swapPercent()), 1),
+                'disk_percent' => round($hour->last()->diskPercent(), 1),
+                'readings' => $hour->count(),
+            ])
+            ->values()
+            ->all();
     }
 
     /**

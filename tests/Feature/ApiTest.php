@@ -7,6 +7,7 @@ use App\Enums\PhpTask;
 use App\Enums\PhpVersion;
 use App\Enums\ResourceStatus;
 use App\Enums\ServerStatus;
+use App\Enums\TaskStatus;
 use App\Jobs\ChangePhpVersion;
 use App\Jobs\CreateDatabase;
 use App\Jobs\DeploySite;
@@ -19,6 +20,7 @@ use App\Jobs\RebootServer;
 use App\Jobs\RemoveSite;
 use App\Jobs\RunSiteCommand;
 use App\Jobs\SyncDatabaseUser;
+use App\Models\Certificate;
 use App\Models\Database;
 use App\Models\Deployment;
 use App\Models\Server;
@@ -182,6 +184,59 @@ test('the owner can delete a server', function () {
     $this->deleteJson("/api/v1/servers/{$server->id}")->assertNoContent();
 
     expect($server->fresh())->toBeNull();
+});
+
+test('a server shows its latest usage, why it needs a reboot, failing certificates and recent failed tasks', function () {
+    $server = Server::factory()->create(['reboot_required_at' => now(), 'reboot_required_packages' => ['linux-image-6.8.0-90-generic']]);
+    $server->metrics()->forceCreate(['cpu_percent' => 37.5, 'load_1' => 0.4, 'load_5' => 0.3, 'load_15' => 0.2, 'memory_total' => 100, 'memory_used' => 40, 'swap_total' => 10, 'swap_used' => 5, 'disk_total' => 100, 'disk_used' => 90, 'uptime_seconds' => 60]);
+    $site = Site::factory()->for($server)->create(['domain' => 'example.com']);
+    Certificate::factory()->for($site)->create(['status' => ResourceStatus::Installed, 'expires_at' => now()->addDays(3)]);
+    Task::factory()->for($server)->create(['name' => 'Install Redis', 'status' => TaskStatus::Failed]);
+    Task::factory()->for($server)->create(['name' => 'Create database', 'status' => TaskStatus::Finished]);
+    withApiKey($server->user, ['servers:read', 'certificates:read']);
+
+    $this->getJson("/api/v1/servers/{$server->id}")
+        ->assertOk()
+        ->assertJsonPath('data.reboot_required', true)
+        ->assertJsonPath('data.reboot_required_packages', ['linux-image-6.8.0-90-generic'])
+        ->assertJsonPath('data.usage.cpu_percent', 37.5)
+        ->assertJsonPath('data.usage.memory_percent', 40)
+        ->assertJsonPath('data.usage.swap_percent', 50)
+        ->assertJsonPath('data.usage.disk_percent', 90)
+        ->assertJsonPath('data.usage.uptime_seconds', 60)
+        ->assertJsonPath('data.certificates_not_renewing.0.domain', 'example.com')
+        ->assertJsonCount(1, 'data.recent_failed_tasks')
+        ->assertJsonPath('data.recent_failed_tasks.0.name', 'Install Redis');
+
+    $this->getJson('/api/v1/servers')
+        ->assertOk()
+        ->assertJsonPath('data.0.usage.disk_percent', 90)
+        ->assertJsonMissingPath('data.0.recent_failed_tasks');
+});
+
+test('failing certificates need the certificates ability', function () {
+    $server = Server::factory()->create();
+    withApiKey($server->user, ['servers:read']);
+
+    $this->getJson("/api/v1/servers/{$server->id}")->assertOk()->assertJsonMissingPath('data.certificates_not_renewing');
+});
+
+test('a server\'s metrics are summarised by the hour', function () {
+    $this->travelTo(now()->startOfHour()->addMinutes(30));
+    $server = Server::factory()->create();
+    $reading = ['load_1' => 0.4, 'load_5' => 0.3, 'load_15' => 0.2, 'memory_total' => 100, 'memory_used' => 40, 'swap_total' => 0, 'swap_used' => 0, 'disk_total' => 100, 'disk_used' => 50, 'uptime_seconds' => 60];
+    $server->metrics()->forceCreate([...$reading, 'cpu_percent' => 20, 'created_at' => now()->subHours(30)]);
+    $server->metrics()->forceCreate([...$reading, 'cpu_percent' => 10, 'created_at' => now()->subMinutes(10)]);
+    $server->metrics()->forceCreate([...$reading, 'cpu_percent' => 30, 'created_at' => now()->subMinutes(5)]);
+    withApiKey($server->user, ['servers:read']);
+
+    $this->getJson("/api/v1/servers/{$server->id}/metrics")
+        ->assertOk()
+        ->assertJsonPath('data.latest.cpu_percent', 30)
+        ->assertJsonCount(1, 'data.hourly');
+
+    $this->getJson("/api/v1/servers/{$server->id}/metrics?hours=48")->assertOk()->assertJsonCount(2, 'data.hourly');
+    $this->getJson("/api/v1/servers/{$server->id}/metrics?hours=500")->assertUnprocessable();
 });
 
 test('a server\'s activity lists its tasks, and each one has its output', function () {
