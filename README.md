@@ -82,6 +82,10 @@ php artisan test --compact
 
 Some tests check generated server scripts with `bash -n`, and are skipped where `bash` is not available.
 
+## Trademarks
+
+Swage is an independent project and is not affiliated with, endorsed by or sponsored by Laravel, Laravel Nightwatch, LaraOwl, GitHub, GitLab or Cloudflare. These names, and any related logos, are trademarks of their respective owners, who also hold the copyright in their products. They are used here only to describe what Swage works with.
+
 ## License
 
 Copyright (c) 2026 Node Dog Consulting. Swage is released under the [GNU Affero General Public License v3.0](LICENSE). If you run a modified version of Swage for other people over a network, you must offer them its source.
