@@ -2,9 +2,8 @@ set -Eeuo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 
-# Servers have had the ondrej PPA since they were provisioned. Adding it again only refreshes it.
-add-apt-repository -y ppa:ondrej/php
-apt-get update -q
+# Writing the PHP repository again only refreshes it, and moves a server still on the old PPA across.
+@include('scripts.partials.php-repository')
 
 @include('scripts.partials.install-php')
 

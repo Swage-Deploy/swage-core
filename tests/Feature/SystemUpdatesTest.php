@@ -1,8 +1,11 @@
 <?php
 
 use App\Enums\PhpVersion;
+use App\Enums\ServerStatus;
+use App\Enums\TaskStatus;
 use App\Jobs\CheckRebootRequired;
 use App\Jobs\RebootServer;
+use App\Jobs\SwitchPhpRepository;
 use App\Models\Server;
 use App\Provisioning\ServerTuner;
 use App\Ssh\Script;
@@ -11,14 +14,15 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Queue;
 use Livewire\Livewire;
 
-test('new servers install security updates from ubuntu, the php ppa and nodesource without rebooting', function () {
+test('new servers install security updates from ubuntu, packages.sury.org and nodesource without rebooting', function () {
     $server = Server::factory()->create(['php_versions' => [PhpVersion::Php85]]);
     $tuning = (new ServerTuner)->tune($server->specs(), $server->usesMysql(), (bool) $server->has_redis, $server->usesPostgres());
 
     expect(Script::render('provision.server', ['server' => $server, 'tuning' => $tuning]))
         ->toContain('apt-get install -yq unattended-upgrades')
         ->toContain('APT::Periodic::Unattended-Upgrade "1";')
-        ->toContain('"origin=LP-PPA-ondrej-php,codename=${distro_codename}";')
+        ->toContain('"origin=deb.sury.org,codename=${distro_codename}";')
+        ->not->toContain('LP-PPA-ondrej-php')
         ->toContain('"site=deb.nodesource.com";')
         ->toContain('Unattended-Upgrade::Automatic-Reboot "false";')
         ->toContain('systemctl enable --now unattended-upgrades');
@@ -31,11 +35,11 @@ test('database servers only install security updates from ubuntu, since they hav
     expect(Script::render('provision.server', ['server' => $server, 'tuning' => $tuning]))
         ->toContain('apt-get install -yq unattended-upgrades')
         ->toContain('Unattended-Upgrade::Automatic-Reboot "false";')
-        ->not->toContain('LP-PPA-ondrej-php')
+        ->not->toContain('deb.sury.org')
         ->not->toContain('deb.nodesource.com');
 });
 
-test('the panel host also installs updates from the php ppa, nodesource and cloudflared', function () {
+test('the panel host also installs updates from the php repository, nodesource and cloudflared', function () {
     $migration = File::get(resource_path('scripts/host/migrations/2026_10_21_000018_unattended_upgrade_origins.sh'));
 
     expect($migration)
@@ -125,4 +129,50 @@ test('rebooting schedules the reboot so the ssh session ends cleanly, then clear
     $shell->assertRan('systemd-run --quiet --on-active=5');
     expect($server->fresh()->reboot_required_at)->toBeNull()
         ->and($server->tasks()->sole()->name)->toBe('Rebooting the server');
+});
+
+test('new app servers install php from packages.sury.org rather than the retired ppa', function () {
+    $server = Server::factory()->create(['php_versions' => [PhpVersion::Php85]]);
+    $tuning = (new ServerTuner)->tune($server->specs(), $server->usesMysql(), (bool) $server->has_redis, $server->usesPostgres());
+
+    expect(Script::render('provision.server', ['server' => $server, 'tuning' => $tuning]))
+        ->toContain('https://packages.sury.org/debsuryorg-archive-keyring.deb')
+        ->toContain('https://packages.sury.org/php/ ${VERSION_CODENAME} main')
+        ->not->toContain('ppa:ondrej/php');
+});
+
+test('existing app servers are moved to packages.sury.org, with their php security updates', function () {
+    $shell = fakeShell();
+    $server = Server::factory()->create();
+
+    SwitchPhpRepository::dispatchSync($server);
+
+    $shell->assertRan('rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*');
+    $shell->assertRan('https://packages.sury.org/php/');
+    $shell->assertRan('s/"origin=LP-PPA-ondrej-php,/"origin=deb.sury.org,/');
+
+    expect($server->tasks()->first())
+        ->name->toBe('Moving PHP to packages.sury.org')
+        ->status->toBe(TaskStatus::Finished);
+});
+
+test('updating swage moves every active app server to packages.sury.org once', function () {
+    Queue::fake();
+    $app = Server::factory()->create();
+    $database = Server::factory()->database()->create();
+    $provisioning = Server::factory()->create(['status' => ServerStatus::Provisioning]);
+
+    (require database_path('migrations/2026_10_31_235400_switch_php_repository.php'))->up();
+
+    Queue::assertPushed(SwitchPhpRepository::class, 1);
+    Queue::assertPushed(SwitchPhpRepository::class, fn (SwitchPhpRepository $job): bool => $job->server->is($app));
+});
+
+test('the panel host moves to packages.sury.org too', function () {
+    $migration = File::get(resource_path('scripts/host/migrations/2026_11_11_000023_php_from_sury.sh'));
+    $lib = File::get(resource_path('scripts/host/lib.sh'));
+
+    expect($migration)->toContain('php_repository')->toContain('"origin=deb.sury.org,')
+        ->and(File::get(resource_path('scripts/host/migrations/2026_10_14_000002_php.sh')))->toContain('php_repository')->not->toContain('ppa:ondrej/php')
+        ->and($lib)->toContain('https://packages.sury.org/php/ $codename main');
 });

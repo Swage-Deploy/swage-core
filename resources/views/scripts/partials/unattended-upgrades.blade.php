@@ -1,4 +1,4 @@
-# Install security updates every day, including PHP from the ondrej PPA and Node.js from NodeSource on app servers, which
+# Install security updates every day, including PHP from packages.sury.org and Node.js from NodeSource on app servers, which
 # Ubuntu's defaults leave out. Servers are never rebooted automatically: Swage shows when one needs it.
 apt-get install -yq unattended-upgrades
 
@@ -11,7 +11,7 @@ SWAGE_EOF
 cat > /etc/apt/apt.conf.d/52swage-unattended-upgrades <<'SWAGE_EOF'
 @if ($server->isAppServer())
 Unattended-Upgrade::Origins-Pattern {
-    "origin=LP-PPA-ondrej-php,codename=${distro_codename}";
+    "origin=deb.sury.org,codename=${distro_codename}";
     "site=deb.nodesource.com";
 };
 @endif

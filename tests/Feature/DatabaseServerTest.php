@@ -88,7 +88,7 @@ test('provisioning a database server skips the web stack and opens only ssh', fu
         ->assertSee("grep -m1 '# swage-database'", escape: false)
         ->assertSee('include_if_exists swage-hba.conf', escape: false)
         ->assertDontSee('nginx')
-        ->assertDontSee('ppa:ondrej/php')
+        ->assertDontSee('packages.sury.org/php/')
         ->assertDontSee('nodesource')
         ->assertDontSee('ufw allow 80/tcp')
         ->assertDontSee('redis-server');

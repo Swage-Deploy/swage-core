@@ -141,3 +141,22 @@ NGINX
         systemctl reload nginx
     fi
 }
+
+# Installs PHP from Ondřej Surý's repository at packages.sury.org, which
+# replaces his PPA on Launchpad, and removes the PPA's source if it is there.
+php_repository() {
+    rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*.list /etc/apt/sources.list.d/ondrej-ubuntu-php-*.sources
+
+    if [ ! -f /usr/share/keyrings/debsuryorg-archive-keyring.gpg ]; then
+        local keyring
+        keyring=$(mktemp)
+        curl -fsSL --proto '=https' https://packages.sury.org/debsuryorg-archive-keyring.deb -o "$keyring"
+        dpkg -i "$keyring"
+        rm -f "$keyring"
+    fi
+
+    local codename
+    codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
+    echo "deb [signed-by=/usr/share/keyrings/debsuryorg-archive-keyring.gpg] https://packages.sury.org/php/ $codename main" > /etc/apt/sources.list.d/php.list
+    apt-get update -q
+}

@@ -32,7 +32,7 @@ test('a php version can be installed on a running server and its sites can switc
         ->and($server->default_php_version)->toBe(PhpVersion::Php85)
         ->and($server->php_task)->toBeNull();
 
-    $shell->assertRan('add-apt-repository -y ppa:ondrej/php');
+    $shell->assertRan('https://packages.sury.org/php/');
     $shell->assertRan('apt-get install -yq php8.3-fpm php8.3-cli php8.3-common php8.3-mysql');
     expect($shell->lastScript())
         ->toContain('/etc/php/8.3/fpm/pool.d/www.conf')

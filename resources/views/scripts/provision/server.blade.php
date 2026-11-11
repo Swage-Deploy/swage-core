@@ -120,8 +120,7 @@ ln -sf /etc/nginx/sites-available/000-catch-all /etc/nginx/sites-enabled/000-cat
 swage_step 'Installing PHP {!! $server->php_versions->map->value->implode(', ') !!}'
 # ---------------------------------------------------------------------------
 
-add-apt-repository -y ppa:ondrej/php
-apt-get update -q
+@include('scripts.partials.php-repository')
 
 @foreach ($server->php_versions as $php)
 @include('scripts.partials.install-php')

@@ -1,7 +1,8 @@
 # PHP, Composer, and a PHP-FPM pool running as the application user.
 
-add-apt-repository -y ppa:ondrej/php
-apt-get update -q
+# Fresh installs use packages.sury.org. Hosts installed while this added the
+# ondrej PPA are moved across by 2026_11_11_000023_php_from_sury.
+php_repository
 
 apt-get install -yq php$PHP_VERSION-fpm php$PHP_VERSION-cli php$PHP_VERSION-common php$PHP_VERSION-mysql \
     php$PHP_VERSION-sqlite3 php$PHP_VERSION-redis php$PHP_VERSION-mbstring php$PHP_VERSION-xml php$PHP_VERSION-curl \

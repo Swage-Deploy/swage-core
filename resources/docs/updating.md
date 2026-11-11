@@ -65,9 +65,11 @@ Ubuntu's unattended upgrades install security updates every day on the panel hos
 | Repository | Provides | Where |
 |---|---|---|
 | Ubuntu's archive | The system, nginx, MySQL, PostgreSQL, Redis | Panel host and servers |
-| `ppa:ondrej/php` | PHP and its extensions | Panel host and app servers |
+| [packages.sury.org](https://packages.sury.org/php/) | PHP and its extensions | Panel host and app servers |
 | NodeSource | Node.js | Panel host and app servers |
 | Cloudflare | `cloudflared` | Panel hosts behind a [Cloudflare Tunnel](/docs/cloudflare-tunnel) |
+
+Since Swage v1.3.20, PHP comes from Ondřej Surý's repository at packages.sury.org, which replaces his `ppa:ondrej/php` on Launchpad. Updating Swage moves the panel host and every active app server across, and each server's **Activity** page records the move. The packages are the same, so nothing is reinstalled.
 
 Services restart as their packages update, which interrupts requests for about a second. Other package updates and Ubuntu release upgrades are left to you.
 
