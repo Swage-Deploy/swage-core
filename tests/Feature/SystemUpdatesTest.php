@@ -4,8 +4,8 @@ use App\Enums\PhpVersion;
 use App\Enums\ServerStatus;
 use App\Enums\TaskStatus;
 use App\Jobs\CheckRebootRequired;
+use App\Jobs\MovePhpRepository;
 use App\Jobs\RebootServer;
-use App\Jobs\SwitchPhpRepository;
 use App\Models\Server;
 use App\Provisioning\ServerTuner;
 use App\Ssh\Script;
@@ -145,7 +145,7 @@ test('existing app servers are moved to packages.sury.org, with their php securi
     $shell = fakeShell();
     $server = Server::factory()->create();
 
-    SwitchPhpRepository::dispatchSync($server);
+    MovePhpRepository::dispatchSync($server);
 
     $shell->assertRan('rm -f /etc/apt/sources.list.d/ondrej-ubuntu-php-*');
     $shell->assertRan('https://packages.sury.org/php/');
@@ -153,19 +153,37 @@ test('existing app servers are moved to packages.sury.org, with their php securi
 
     expect($server->tasks()->first())
         ->name->toBe('Moving PHP to packages.sury.org')
-        ->status->toBe(TaskStatus::Finished);
+        ->status->toBe(TaskStatus::Finished)
+        ->and($server->refresh()->php_repository_moved_at)->not->toBeNull();
 });
 
-test('updating swage moves every active app server to packages.sury.org once', function () {
+test('a server that could not be moved is tried again', function () {
+    fakeShell()->respondTo('packages.sury.org', new ScriptResult(255, 'Connection refused'));
+    $server = Server::factory()->create();
+
+    expect(fn () => MovePhpRepository::dispatchSync($server))->toThrow(Exception::class)
+        ->and($server->refresh()->php_repository_moved_at)->toBeNull();
+});
+
+test('the hourly check moves every active app server that has not moved yet', function () {
     Queue::fake();
     $app = Server::factory()->create();
-    $database = Server::factory()->database()->create();
-    $provisioning = Server::factory()->create(['status' => ServerStatus::Provisioning]);
+    Server::factory()->create(['php_repository_moved_at' => now()]);
+    Server::factory()->database()->create();
+    Server::factory()->create(['status' => ServerStatus::Provisioning]);
 
-    (require database_path('migrations/2026_10_31_235400_switch_php_repository.php'))->up();
+    $this->artisan('swage:move-php-repository')->assertSuccessful();
 
-    Queue::assertPushed(SwitchPhpRepository::class, 1);
-    Queue::assertPushed(SwitchPhpRepository::class, fn (SwitchPhpRepository $job): bool => $job->server->is($app));
+    Queue::assertPushed(MovePhpRepository::class, 1);
+    Queue::assertPushed(MovePhpRepository::class, fn (MovePhpRepository $job): bool => $job->server->is($app));
+});
+
+test('newly provisioned servers are already on packages.sury.org', function () {
+    $server = Server::factory()->create(['status' => ServerStatus::Provisioning]);
+
+    $this->post("/provision/{$server->provision_token}/finished")->assertNoContent();
+
+    expect($server->refresh()->php_repository_moved_at)->not->toBeNull();
 });
 
 test('the panel host moves to packages.sury.org too', function () {

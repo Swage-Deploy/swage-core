@@ -9,13 +9,18 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 
-class SwitchPhpRepository implements ShouldBeUnique, ShouldQueue
+class MovePhpRepository implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
     public int $timeout = 360;
 
     public int $tries = 1;
+
+    /**
+     * A lock left by a job that never ran expires, so the next hourly check queues it again.
+     */
+    public int $uniqueFor = 3600;
 
     public function __construct(public Server $server) {}
 
@@ -30,6 +35,8 @@ class SwitchPhpRepository implements ShouldBeUnique, ShouldQueue
      */
     public function handle(RunServerTask $runTask): void
     {
-        $runTask->run($this->server, 'Moving PHP to packages.sury.org', Script::render('php.switch-repository'), timeout: 300);
+        $runTask->run($this->server, 'Moving PHP to packages.sury.org', Script::render('php.move-repository'), timeout: 300);
+
+        $this->server->update(['php_repository_moved_at' => now()]);
     }
 }

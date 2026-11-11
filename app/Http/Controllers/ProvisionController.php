@@ -81,6 +81,8 @@ class ProvisionController extends Controller
             'status' => ServerStatus::Active,
             'provisioning_step' => null,
             'provisioned_at' => now(),
+            // Its PHP already comes from packages.sury.org.
+            'php_repository_moved_at' => now(),
             'provision_token' => null,
         ]);
 

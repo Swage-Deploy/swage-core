@@ -34,7 +34,7 @@ use Illuminate\Support\Str;
     'name', 'type', 'ip_address', 'private_ip_address', 'ssh_port', 'status', 'provision_token', 'provisioning_step',
     'cpu_cores', 'memory_mb', 'disk_gb', 'os_version', 'php_versions', 'default_php_version', 'php_task', 'php_task_version',
     'has_mysql', 'has_postgres', 'has_pgvector', 'installing_database', 'database_access', 'has_redis', 'ssh_private_key', 'ssh_public_key', 'host_key', 'database_password',
-    'redis_password', 'tuning', 'config_overrides', 'reboot_required_at', 'reboot_required_packages', 'provisioned_at',
+    'redis_password', 'tuning', 'config_overrides', 'reboot_required_at', 'reboot_required_packages', 'php_repository_moved_at', 'provisioned_at',
 ])]
 #[Hidden(['provision_token', 'provision_token_hash', 'ssh_private_key', 'database_password', 'redis_password'])]
 class Server extends Model
@@ -107,6 +107,7 @@ class Server extends Model
             'tuning' => 'array',
             'config_overrides' => 'array',
             'reboot_required_at' => 'datetime',
+            'php_repository_moved_at' => 'datetime',
             'reboot_required_packages' => 'array',
             'provisioned_at' => 'datetime',
         ];

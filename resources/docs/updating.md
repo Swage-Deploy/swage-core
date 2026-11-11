@@ -69,7 +69,7 @@ Ubuntu's unattended upgrades install security updates every day on the panel hos
 | NodeSource | Node.js | Panel host and app servers |
 | Cloudflare | `cloudflared` | Panel hosts behind a [Cloudflare Tunnel](/docs/cloudflare-tunnel) |
 
-Since Swage v1.3.20, PHP comes from Ondřej Surý's repository at packages.sury.org, which replaces his `ppa:ondrej/php` on Launchpad. Updating Swage moves the panel host and every active app server across, and each server's **Activity** page records the move. The packages are the same, so nothing is reinstalled.
+Since Swage v1.3.21, PHP comes from Ondřej Surý's repository at packages.sury.org, which replaces his `ppa:ondrej/php` on Launchpad. Updating Swage moves the panel host across. Every hour, Swage also moves each active app server that hasn't moved yet, and records it on the server's **Activity** page. A server that can't be reached is tried again the next hour. The packages are the same, so nothing is reinstalled.
 
 Services restart as their packages update, which interrupts requests for about a second. Other package updates and Ubuntu release upgrades are left to you.
 
