@@ -52,6 +52,6 @@
     @endif
 
     @if (count($history))
-        <x-sparkline :points="$history" :max="$max" class="mt-1" />
+        <x-sparkline :points="$history" :max="$max" class="mt-auto pt-1" />
     @endif
 </div>
